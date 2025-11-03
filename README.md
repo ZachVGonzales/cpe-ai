@@ -116,7 +116,7 @@ dataset/
 **`run_summary.json`** contains:
 
 - Timestamp and duration
-- Model configuration (model, temperature, max_tokens)
+- Model configuration (model, temperature)
 - Input file and max_problems setting
 - Overall statistics (success/failure counts)
 - List of problem files with status
@@ -147,8 +147,6 @@ python scripts/process_opc.py data/OPC/generic-OPC.json --max-problems 5
 
 # Custom configuration
 python scripts/process_opc.py data/OPC/generic-OPC.json \
-  --model gpt-4-turbo-preview \
-  --temperature 0.5 \
   --dataset-dir dataset/experiment1 \
   --system-prompt data/OPC/System-Prompt-GENARIC.txt
 ```

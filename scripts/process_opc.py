@@ -16,13 +16,13 @@ import os
 import re
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 import time
 from datetime import datetime
 
 MODEL_ID = "gpt-5"
+TEMPERATURE = 0.0
 # model list: https://platform.openai.com/docs/pricing?latest-pricing=standard
 
 try:
@@ -51,10 +51,9 @@ class LeanCodeProcessor:
         api_key: Optional[str] = None,
         model: str = MODEL_ID,
         system_prompt_file: Optional[str] = None,
-        lean_check_script: str = "scripts/data/lean-check.py",
         dataset_dir: str = "dataset",
-        temperature: float = 0.7,
-        max_tokens: int = 4000,
+        reasoning_effort: str = "high",
+        skip_complex_geometry: bool = True,
     ):
         """
         Initialize the processor
@@ -63,10 +62,9 @@ class LeanCodeProcessor:
             api_key: OpenAI API key (if None, reads from OPENAI_API_KEY env var)
             model: OpenAI model to use
             system_prompt_file: Path to system prompt file
-            lean_check_script: Path to lean-check.py script
             dataset_dir: Directory to save successful outputs
-            temperature: Temperature for OpenAI API
-            max_tokens: Maximum tokens for OpenAI API response
+            reasoning_effort: Reasoning effort level (low, medium, high)
+            skip_complex_geometry: Skip problems with complex geometry
         """
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         if not self.api_key:
@@ -76,9 +74,8 @@ class LeanCodeProcessor:
 
         self.client = OpenAI(api_key=self.api_key)
         self.model = model
-        self.temperature = temperature
-        self.max_tokens = max_tokens
-        self.lean_check_script = lean_check_script
+        self.reasoning_effort = reasoning_effort
+        self.skip_complex_geometry = skip_complex_geometry
 
         # Create timestamped run directory
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -90,8 +87,8 @@ class LeanCodeProcessor:
             "timestamp": timestamp,
             "start_time": datetime.now().isoformat(),
             "model": model,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
+            "reasoning_effort": reasoning_effort,
+            "skip_complex_geometry": skip_complex_geometry,
             "system_prompt_file": system_prompt_file,
         }
 
@@ -138,7 +135,9 @@ Requirements:
 - Use `set_option warningAsError true`
 """
 
-    def process_problem(self, problem: Dict) -> Tuple[bool, Optional[str], Dict]:
+    def process_problem(
+        self, problem: Dict[str, Any]
+    ) -> Tuple[bool, Optional[str], Dict[str, Any]]:
         """
         Process a single problem through OpenAI API and test the result
 
@@ -165,6 +164,19 @@ Requirements:
             "metadata": problem.get("metadata", {}),
         }
 
+        # Check if problem should be skipped
+        if self.skip_complex_geometry:
+            skip, reason = self._should_skip_problem(problem_text)
+            if skip:
+                print(f"⏭️  Skipping problem: {reason}")
+                problem_log["status"] = "skipped"
+                problem_log["skip_reason"] = reason
+                problem_log["end_time"] = datetime.now().isoformat()
+                problem_log["total_duration_seconds"] = round(
+                    time.time() - start_time, 2
+                )
+                return False, None, problem_log
+
         # Create prompt from problem
         user_prompt = self._create_user_prompt(problem)
         problem_log["user_prompt"] = user_prompt
@@ -178,8 +190,6 @@ Requirements:
         problem_log["api_call"] = {
             "duration_seconds": round(api_duration, 2),
             "model": self.model,
-            "temperature": self.temperature,
-            "max_tokens": self.max_tokens,
         }
 
         if not lean_code:
@@ -239,7 +249,7 @@ Requirements:
 
         return True, lean_code, problem_log
 
-    def _create_user_prompt(self, problem: Dict) -> str:
+    def _create_user_prompt(self, problem: Dict[str, Any]) -> str:
         """Create user prompt from problem data"""
         problem_text = problem.get("problem", "")
         solution = problem.get("solution", "")
@@ -253,6 +263,38 @@ Requirements:
 
         return prompt
 
+    def _should_skip_problem(self, problem_text: str) -> Tuple[bool, str]:
+        """
+        Check if a problem should be skipped based on complexity indicators
+
+        Returns:
+            Tuple of (should_skip, reason)
+        """
+        problem_lower = problem_text.lower()
+
+        # Indicators of complex geometry that might not be suitable for Lean
+        complex_geometry_indicators = [
+            ("circumcenter", "complex geometric construction (circumcenter)"),
+            ("orthocenter", "complex geometric construction (orthocenter)"),
+            ("incircle", "complex geometric construction (incircle)"),
+            ("excircle", "complex geometric construction (excircle)"),
+            ("simson line", "complex geometric construction (Simson line)"),
+            ("nine-point circle", "complex geometric construction (nine-point circle)"),
+            ("construct", "geometric construction required"),
+            ("draw a line", "geometric construction required"),
+            ("take points", "complex point construction"),
+        ]
+
+        for indicator, reason in complex_geometry_indicators:
+            if indicator in problem_lower:
+                return True, reason
+
+        # Check for multiple geometric points/constructions (heuristic)
+        if problem_lower.count("point") > 8 or problem_lower.count("line") > 6:
+            return True, "too many geometric elements (likely complex construction)"
+
+        return False, ""
+
     def _call_openai_api(self, user_prompt: str) -> Optional[str]:
         """Call OpenAI API with retry logic"""
         max_retries = 3
@@ -260,15 +302,17 @@ Requirements:
 
         for attempt in range(max_retries):
             try:
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[
+                # Build API parameters
+                api_params = {
+                    "model": self.model,
+                    "messages": [
                         {"role": "system", "content": self.system_prompt},
                         {"role": "user", "content": user_prompt},
                     ],
-                    temperature=self.temperature,
-                    max_tokens=self.max_tokens,
-                )
+                    "reasoning_effort": self.reasoning_effort,
+                }
+
+                response = self.client.chat.completions.create(**api_params)
 
                 return response.choices[0].message.content
 
@@ -297,18 +341,34 @@ Requirements:
 
     def _test_lean_compilation(self, lean_code: str) -> Tuple[bool, str]:
         """
-        Test if Lean code compiles using lean-check.py
+        Test if Lean code compiles using lake build in the project directory
 
         Returns:
             Tuple of (success, output)
         """
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".lean", delete=False) as f:
-            f.write(lean_code)
-            temp_file = f.name
+        # Find project root (where lakefile.lean is)
+        project_root = Path(__file__).parent.parent
+
+        # Create temporary Lean file in the CpeAi library directory
+        lib_dir = project_root / "CpeAi"
+        lib_dir.mkdir(exist_ok=True)
+
+        # Use a unique temporary filename
+        import uuid
+
+        temp_filename = f"TempTest_{uuid.uuid4().hex[:8]}.lean"
+        temp_file = lib_dir / temp_filename
 
         try:
+            # Write the Lean code to the temp file
+            temp_file.write_text(lean_code)
+
+            print(f"Temporary Lean file: {temp_file}")
+
+            # Run lake build in the project root (same as lean_compile_test.py)
             result = subprocess.run(
-                [sys.executable, self.lean_check_script, "--file", temp_file],
+                ["lake", "build"],
+                cwd=str(project_root),
                 capture_output=True,
                 text=True,
                 timeout=60,  # 60 second timeout
@@ -317,18 +377,26 @@ Requirements:
             success = result.returncode == 0
             output = result.stdout + result.stderr
 
+            # Log the compilation output for debugging
+            print("Compilation output:")
+            print(output)
+
             return success, output
 
         except subprocess.TimeoutExpired:
+            print(f"Compilation timed out for file: {temp_file}")
             return False, "Compilation timed out after 60 seconds"
         except Exception as e:
-            return False, f"Error running lean-check: {e}"
+            print(f"Error running lake build for file: {temp_file}")
+            print(f"Exception: {e}")
+            return False, f"Error running lake build: {e}"
         finally:
             # Clean up temp file
             try:
-                os.unlink(temp_file)
-            except:
-                pass
+                if temp_file.exists():
+                    temp_file.unlink()
+            except Exception as e:
+                print(f"Warning: Could not delete temp file {temp_file}: {e}")
 
     def _check_parsable_steps(self, lean_code: str) -> Tuple[bool, int]:
         """
@@ -355,7 +423,7 @@ Requirements:
         return True, len(step_starts)
 
     def save_result(
-        self, problem_id: str, lean_code: Optional[str], problem_log: Dict
+        self, problem_id: str, lean_code: Optional[str], problem_log: Dict[str, Any]
     ) -> str:
         """
         Save result (success or failure) to run directory
@@ -384,7 +452,7 @@ Requirements:
 
     def process_json_file(
         self, input_file: str, max_problems: Optional[int] = None
-    ) -> Dict:
+    ) -> Dict[str, Union[int, Dict[str, int]]]:
         """
         Process all problems in a JSON file
 
@@ -417,6 +485,7 @@ Requirements:
         stats = {
             "total": len(problems),
             "successful": 0,
+            "skipped": 0,
             "failed_compilation": 0,
             "failed_parsable": 0,
             "failed_api": 0,
@@ -446,13 +515,17 @@ Requirements:
             if success:
                 stats["successful"] += 1
             else:
-                error = problem_log.get("error", "unknown")
-                if "Compilation failed" in error:
-                    stats["failed_compilation"] += 1
-                elif "Not parsable" in error:
-                    stats["failed_parsable"] += 1
+                status = problem_log.get("status")
+                if status == "skipped":
+                    stats["skipped"] += 1
                 else:
-                    stats["failed_api"] += 1
+                    error = problem_log.get("error", "unknown")
+                    if "Compilation failed" in error:
+                        stats["failed_compilation"] += 1
+                    elif "Not parsable" in error:
+                        stats["failed_parsable"] += 1
+                    else:
+                        stats["failed_api"] += 1
 
         # Complete run metadata
         self.run_metadata["end_time"] = datetime.now().isoformat()
@@ -464,6 +537,7 @@ Requirements:
         print(f"{'='*80}")
         print(f"Total problems: {stats['total']}")
         print(f"✅ Successful: {stats['successful']}")
+        print(f"⏭️  Skipped: {stats['skipped']}")
         print(f"❌ Failed (API): {stats['failed_api']}")
         print(f"❌ Failed (Compilation): {stats['failed_compilation']}")
         print(f"❌ Failed (Not parsable): {stats['failed_parsable']}")
@@ -488,7 +562,7 @@ def main():
         "--api-key", help="OpenAI API key (or set OPENAI_API_KEY env var)"
     )
     parser.add_argument(
-        "--model", default="gpt-4", help=f"OpenAI model to use (default: {MODEL_ID})"
+        "--model", default=MODEL_ID, help=f"OpenAI model to use (default: {MODEL_ID})"
     )
     parser.add_argument("--system-prompt", help="Path to system prompt file (optional)")
     parser.add_argument(
@@ -497,26 +571,26 @@ def main():
         help="Directory to save successful outputs (default: dataset)",
     )
     parser.add_argument(
-        "--lean-check",
-        default="scripts/data/lean-check.py",
-        help="Path to lean-check.py script (default: scripts/data/lean-check.py)",
-    )
-    parser.add_argument(
         "--max-problems",
         type=int,
         help="Maximum number of problems to process (default: all)",
-    )
-    parser.add_argument(
-        "--temperature",
-        type=float,
-        default=0.7,
-        help="Temperature for OpenAI API (default: 0.7)",
     )
     parser.add_argument(
         "--max-tokens",
         type=int,
         default=4000,
         help="Maximum tokens for OpenAI API response (default: 4000)",
+    )
+    parser.add_argument(
+        "--reasoning-effort",
+        default="high",
+        choices=["low", "medium", "high"],
+        help="Reasoning effort level for o1/o3 models (default: high)",
+    )
+    parser.add_argument(
+        "--no-skip-geometry",
+        action="store_true",
+        help="Don't skip complex geometry problems (default: skip them)",
     )
 
     args = parser.parse_args()
@@ -526,21 +600,14 @@ def main():
         print(f"Error: Input file not found: {args.input_file}")
         sys.exit(1)
 
-    # Check if lean-check script exists
-    if not os.path.exists(args.lean_check):
-        print(f"Error: lean-check.py script not found: {args.lean_check}")
-        print("Make sure you're running from the project root directory")
-        sys.exit(1)
-
     try:
         processor = LeanCodeProcessor(
             api_key=args.api_key,
             model=args.model,
             system_prompt_file=args.system_prompt,
-            lean_check_script=args.lean_check,
             dataset_dir=args.dataset_dir,
-            temperature=args.temperature,
-            max_tokens=args.max_tokens,
+            reasoning_effort=args.reasoning_effort,
+            skip_complex_geometry=not args.no_skip_geometry,
         )
 
         processor.process_json_file(args.input_file, max_problems=args.max_problems)

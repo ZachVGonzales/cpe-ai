@@ -13,6 +13,7 @@
 - [ ] batch openai calls to speed up process and make requests cheaper
 - [ ] iterate through the 500 random samples from the dataset with the existing simple pipeline - goal is to see what is possible with the current setup
 - [ ] improve the pipeline based on outputs from the previous step
+- [ ] check for existing name entries and add string to the name to prevent overwriting
 
 ## other goals
 

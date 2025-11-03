@@ -183,6 +183,52 @@ def check_data_files():
     return True
 
 
+def setup_lean_project():
+    """Set up Lean project for compilation."""
+    print("Setting up Lean project...")
+
+    # Check if lakefile.lean exists
+    lakefile_path = Path("lakefile.lean")
+    if not lakefile_path.exists():
+        print("  ❌ lakefile.lean not found. Creating a default lakefile...")
+        lakefile_content = """import Lake
+open Lake DSL
+
+package cpe_ai {
+  -- add configuration options here
+}
+
+require mathlib from git
+  \"https://github.com/leanprover-community/mathlib4.git\"
+
+lean_lib CpeAi {
+  -- add library configuration options here
+}
+"""
+        with open(lakefile_path, "w") as f:
+            f.write(lakefile_content)
+        print("  ✅ Created lakefile.lean")
+
+    # Run lake update
+    try:
+        print("  Running lake update...")
+        result = subprocess.run(
+            ["lake", "update"], capture_output=True, text=True, timeout=30
+        )
+        if result.returncode == 0:
+            print("  ✅ lake update completed successfully")
+        else:
+            print("  ❌ lake update failed")
+            print(result.stderr)
+            return False
+    except Exception as e:
+        print(f"  ❌ Error running lake update: {e}")
+        return False
+
+    print("✅ Lean project setup complete\n")
+    return True
+
+
 def main():
     print("=" * 80)
     print("OPC Processing Setup Verification")
@@ -196,6 +242,7 @@ def main():
         ("lean-check.py Script", check_lean_check_script),
         ("process_opc.py Script", check_process_script),
         ("Example Data Files", check_data_files),
+        ("Lean Project Setup", setup_lean_project),
     ]
 
     results = []

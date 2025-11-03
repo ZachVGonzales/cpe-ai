@@ -8,8 +8,7 @@
 
 ## next steps
 
-- [ ] set reasoning level to high
-- [ ] check if the problem is very reasonable to solve with lean and if not then skip (skip the comlex geometries like simulating all points)
+- [ ] parsable steps check
 - [ ] batch openai calls to speed up process and make requests cheaper
 - [ ] iterate through the 500 random samples from the dataset with the existing simple pipeline - goal is to see what is possible with the current setup
 - [ ] improve the pipeline based on outputs from the previous step

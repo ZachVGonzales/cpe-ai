@@ -48,6 +48,14 @@ python scripts/data/lean-check.py --file data/OPC/filename... --run
 
 This project includes a complete pipeline for processing mathematical problems through the OpenAI API, generating Lean 4 code, and validating the results.
 
+The pipeline is organized into modular components for better maintainability and reusability:
+
+- **`scripts/process_opc.py`** - Main entry point with CLI
+- **`scripts/pipeline/config.py`** - Configuration and environment setup
+- **`scripts/pipeline/openai_client.py`** - OpenAI API client
+- **`scripts/pipeline/lean_compiler.py`** - Lean code compilation and validation
+- **`scripts/pipeline/processor.py`** - Core processing pipeline
+
 ### Quick Start
 
 1. **Install dependencies:**
@@ -159,3 +167,48 @@ See [scripts/README_PROCESS_OPC.md](scripts/README_PROCESS_OPC.md) for:
 - Input/output formats
 - Troubleshooting guide
 - Advanced usage examples
+
+## Pipeline Architecture
+
+The processing pipeline is organized into modular components:
+
+### `config.py`
+
+Handles configuration, constants, and environment setup:
+
+- Model and API settings
+- Retry logic configuration
+- System prompt management
+- Environment initialization
+
+### `openai_client.py`
+
+Manages OpenAI API interactions:
+
+- `OpenAIClient` class with built-in retry logic
+- API parameter handling
+- System prompt loading
+
+### `lean_compiler.py`
+
+Provides Lean code compilation and validation utilities:
+
+- `test_lean_compilation()` - Compiles code using `lake build`
+- `check_parsable_steps()` - Validates proof step formatting
+- `extract_lean_code()` - Extracts code from markdown responses
+
+### `processor.py`
+
+Contains the main processing pipeline:
+
+- `LeanCodeProcessor` class orchestrating the entire workflow
+- Problem processing with OpenAI API
+- Result saving and statistics tracking
+- Batch processing with comprehensive logging
+
+### Why Modular?
+
+- **Testability** - Each component can be tested independently
+- **Reusability** - Components can be used in other projects
+- **Maintainability** - Clear separation of concerns
+- **Scalability** - Easier to extend or add features

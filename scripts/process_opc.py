@@ -18,9 +18,12 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 import time
 from datetime import datetime
+
+MODEL_ID = "gpt-5"
+# model list: https://platform.openai.com/docs/pricing?latest-pricing=standard
 
 try:
     from openai import OpenAI
@@ -46,7 +49,7 @@ class LeanCodeProcessor:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model: str = "gpt-4",
+        model: str = MODEL_ID,
         system_prompt_file: Optional[str] = None,
         lean_check_script: str = "scripts/data/lean-check.py",
         dataset_dir: str = "dataset",
@@ -83,7 +86,7 @@ class LeanCodeProcessor:
         self.run_dir.mkdir(parents=True, exist_ok=True)
 
         # Store run metadata
-        self.run_metadata = {
+        self.run_metadata: Dict[str, Any] = {
             "timestamp": timestamp,
             "start_time": datetime.now().isoformat(),
             "model": model,
@@ -485,7 +488,7 @@ def main():
         "--api-key", help="OpenAI API key (or set OPENAI_API_KEY env var)"
     )
     parser.add_argument(
-        "--model", default="gpt-4", help="OpenAI model to use (default: gpt-4)"
+        "--model", default="gpt-4", help=f"OpenAI model to use (default: {MODEL_ID})"
     )
     parser.add_argument("--system-prompt", help="Path to system prompt file (optional)")
     parser.add_argument(

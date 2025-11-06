@@ -93,7 +93,69 @@ python scripts/process_opc.py data/OPC/generic-OPC.json
 # Use custom system prompt
 python scripts/process_opc.py data/OPC/generic-OPC.json \
   --system-prompt data/OPC/System-Prompt_CHAP1.txt
+
+# Use Batch API mode (50% cost savings, but takes longer)
+python scripts/process_opc.py data/OPC/generic-OPC.json --batch
 ```
+
+### Batch API Mode
+
+For processing multiple problems at lower cost, use the `--batch` flag:
+
+```bash
+python scripts/process_opc.py data/OPC/generic-OPC.json --batch
+```
+
+**Benefits:**
+
+- 💰 **50% cost savings** compared to standard API calls
+- 🔄 Processes all problems in a single batch request
+- 📊 Same validation and output format
+
+**Trade-offs:**
+
+- ⏰ Takes longer (up to 24 hours completion window)
+- ⚡ Not suitable for real-time or interactive use
+- 🔍 Best for bulk processing large datasets
+
+**Workflow:**
+
+1. **Prepare batch request**: Filters and prepares all problems
+2. **Submit to OpenAI**: Creates JSONL file and uploads batch request
+3. **Monitor progress**: Script polls every 60 seconds with status updates
+4. **Retrieve results**: Downloads completed batch output automatically
+5. **Validate**: Tests compilation and parsability for each result
+
+**Duplicate Handling:**
+
+If your JSON file contains duplicate `problem_id` values, the batch mode automatically handles this by appending unique suffixes (`_1`, `_2`, etc.) to ensure each request has a unique identifier for the OpenAI Batch API.
+
+#### Batch Utility Scripts
+
+**Check batch status:**
+
+```bash
+python scripts/check_batch.py <batch_id>
+```
+
+Shows current status, request counts, and any errors. Useful for monitoring long-running batches.
+
+**Retrieve completed batch:**
+
+```bash
+# Download and save results
+python scripts/retrieve_batch.py <batch_id>
+
+# Download, save, AND validate (compile + parsability check)
+python scripts/retrieve_batch.py <batch_id> --process
+```
+
+The retrieve script:
+
+- Downloads the batch output JSONL file
+- Extracts each result and saves to `batch_results/<batch_id>/`
+- With `--process`: Runs Lean compilation and parsability checks
+- Saves `.lean` files, response text, and validation JSON for each problem
 
 ### What It Does
 

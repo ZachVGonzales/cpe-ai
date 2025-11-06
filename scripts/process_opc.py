@@ -61,6 +61,11 @@ def main():
         action="store_true",
         help="Don't skip complex geometry problems (default: skip them)",
     )
+    parser.add_argument(
+        "--batch",
+        action="store_true",
+        help="Use OpenAI Batch API for processing (cheaper, but takes longer)",
+    )
 
     args = parser.parse_args()
 
@@ -85,7 +90,16 @@ def main():
             skip_complex_geometry=not args.no_skip_geometry,
         )
 
-        processor.process_json_file(args.input_file, max_problems=args.max_problems)
+        # Use batch mode or regular mode
+        if args.batch:
+            print(
+                "🔄 Using Batch API mode (50% cost savings, may take up to 24 hours)\n"
+            )
+            processor.process_json_file_batch(
+                args.input_file, max_problems=args.max_problems
+            )
+        else:
+            processor.process_json_file(args.input_file, max_problems=args.max_problems)
 
     except Exception as e:
         print(f"\nError: {e}")

@@ -14,6 +14,10 @@ TEMPERATURE = 0.0
 MAX_RETRIES = 3
 RETRY_DELAY = 2
 
+# Batch API configuration
+BATCH_CHECK_INTERVAL = 60  # seconds between status checks
+BATCH_MAX_WAIT = 86400  # maximum wait time (24 hours)
+
 # Compilation configuration
 LEAN_BUILD_TIMEOUT = 60  # seconds
 

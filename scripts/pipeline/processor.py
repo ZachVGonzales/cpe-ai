@@ -363,3 +363,252 @@ class LeanCodeProcessor:
         print(f"📁 All results in: {self.run_dir}\n")
 
         return stats
+
+    def process_json_file_batch(
+        self, input_file: str, max_problems: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        Process all problems in a JSON file using OpenAI Batch API.
+
+        Args:
+            input_file: Path to input JSON file
+            max_problems: Maximum number of problems to process (None = all)
+
+        Returns:
+            Dictionary with summary statistics
+        """
+        print(f"Loading problems from: {input_file}")
+        print(f"🔄 Using BATCH API mode\n")
+
+        # Update run metadata with input file info
+        self.run_metadata["input_file"] = input_file
+        self.run_metadata["max_problems"] = max_problems
+        self.run_metadata["batch_mode"] = True
+        self.run_metadata["problem_files"] = []
+
+        with open(input_file, "r") as f:
+            problems = json.load(f)
+
+        if not isinstance(problems, list):
+            problems = [problems]
+
+        if max_problems:
+            problems = problems[:max_problems]
+
+        # Filter out problems that should be skipped
+        filtered_problems = []
+        skipped_count = 0
+
+        for i, problem in enumerate(problems, 1):
+            problem_id = problem.get("problem_id", f"problem_{i}")
+            problem_text = problem.get("problem", "")
+
+            if self.skip_complex_geometry:
+                skip, reason = self._should_skip_problem(problem_text)
+                if skip:
+                    print(f"⏭️  Skipping {problem_id}: {reason}")
+                    skipped_count += 1
+                    # Save skip record
+                    skip_log = {
+                        "problem_id": problem_id,
+                        "problem": problem_text,
+                        "status": "skipped",
+                        "skip_reason": reason,
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                    self.save_result(problem_id, None, skip_log)
+                    continue
+
+            filtered_problems.append((problem_id, problem))
+
+        print(f"\n📦 Preparing batch for {len(filtered_problems)} problem(s)...")
+
+        # Create batch requests with unique custom_ids
+        batch_requests = []
+        custom_id_counter = {}  # Track duplicates
+
+        for problem_id, problem in filtered_problems:
+            # Make custom_id unique by appending counter for duplicates
+            if problem_id in custom_id_counter:
+                custom_id_counter[problem_id] += 1
+                unique_custom_id = f"{problem_id}_{custom_id_counter[problem_id]}"
+            else:
+                custom_id_counter[problem_id] = 0
+                unique_custom_id = problem_id
+
+            user_prompt = self._create_user_prompt(problem)
+            batch_requests.append(
+                {
+                    "custom_id": unique_custom_id,
+                    "original_problem_id": problem_id,  # Keep original for reference
+                    "system_prompt": self.system_prompt,
+                    "user_prompt": user_prompt,
+                }
+            )
+
+        # Submit batch
+        batch_dir = self.run_dir / "batch"
+        batch_id, input_file_path = self.openai_client.create_batch_request(
+            batch_requests, batch_dir
+        )
+
+        if not batch_id:
+            print(f"❌ Failed to create batch: {input_file_path}")
+            return {"error": "batch_creation_failed"}
+
+        # Save batch info
+        batch_info = {
+            "batch_id": batch_id,
+            "input_file": input_file_path,
+            "created_at": datetime.now().isoformat(),
+            "problem_count": len(filtered_problems),
+        }
+
+        batch_info_file = batch_dir / "batch_info.json"
+        with open(batch_info_file, "w") as f:
+            json.dump(batch_info, f, indent=2)
+
+        print(f"💾 Batch info saved to: {batch_info_file}")
+        print(f"\n⏳ Waiting for batch to complete (this may take a while)...")
+
+        # Wait for batch to complete
+        final_status = self.openai_client.wait_for_batch(batch_id)
+
+        if final_status != "completed":
+            print(f"❌ Batch did not complete successfully: {final_status}")
+            return {"error": f"batch_{final_status}"}
+
+        # Retrieve results
+        output_file = batch_dir / f"batch_output_{batch_id}.jsonl"
+        results = self.openai_client.retrieve_batch_results(batch_id, output_file)
+
+        if not results:
+            print("❌ Failed to retrieve batch results")
+            return {"error": "batch_retrieval_failed"}
+
+        print(f"\n📊 Processing {len(results)} batch results...")
+
+        # Process results - need to map back from unique custom_ids
+        stats = {
+            "total": len(problems),
+            "successful": 0,
+            "skipped": skipped_count,
+            "failed_compilation": 0,
+            "failed_parsable": 0,
+            "failed_api": 0,
+        }
+
+        # Create mapping from unique_custom_id to problem data
+        problem_map = {}
+        for problem_id, problem in filtered_problems:
+            if problem_id in custom_id_counter and custom_id_counter[problem_id] > 0:
+                # This problem_id has duplicates, find the right unique_custom_id
+                count = 0
+                for pid, prob in filtered_problems:
+                    if pid == problem_id:
+                        unique_id = pid if count == 0 else f"{pid}_{count}"
+                        problem_map[unique_id] = (pid, prob)
+                        count += 1
+                        if count > custom_id_counter[problem_id]:
+                            break
+            else:
+                problem_map[problem_id] = (problem_id, problem)
+
+        for unique_custom_id, (problem_id, problem) in problem_map.items():
+            print(f"\n{'='*80}")
+            print(f"Processing result: {unique_custom_id}")
+            if unique_custom_id != problem_id:
+                print(f"  (Original ID: {problem_id})")
+            print(f"{'='*80}")
+
+            response = results.get(unique_custom_id)
+
+            if not response:
+                print(f"❌ No response from API for {problem_id}")
+                problem_log = {
+                    "problem_id": problem_id,
+                    "problem": problem.get("problem", ""),
+                    "status": "failed",
+                    "error": "No response from batch API",
+                    "timestamp": datetime.now().isoformat(),
+                }
+                self.save_result(problem_id, None, problem_log)
+                stats["failed_api"] += 1
+                continue
+
+            # Extract and test Lean code
+            lean_code = extract_lean_code(response)
+
+            # Test compilation
+            print("Testing Lean code compilation...")
+            project_root = Path(__file__).parent.parent.parent
+            compile_success, compile_output = test_lean_compilation(
+                lean_code, project_root
+            )
+
+            # Check parsability
+            parsable, step_count = check_parsable_steps(lean_code)
+
+            # Create problem log
+            problem_log = {
+                "problem_id": problem_id,
+                "problem": problem.get("problem", ""),
+                "solution": problem.get("solution", ""),
+                "metadata": problem.get("metadata", {}),
+                "generated_code": lean_code,
+                "compilation": {
+                    "success": compile_success,
+                    "output": compile_output,
+                },
+                "parsability": {
+                    "is_parsable": parsable,
+                    "step_count": step_count,
+                },
+                "timestamp": datetime.now().isoformat(),
+                "batch_mode": True,
+            }
+
+            # Determine success
+            if compile_success and parsable:
+                problem_log["status"] = "success"
+                stats["successful"] += 1
+                print(f"✅ Success! {step_count} parsable steps")
+            elif not compile_success:
+                problem_log["status"] = "failed"
+                problem_log["error"] = "Compilation failed"
+                stats["failed_compilation"] += 1
+                print("❌ Compilation failed")
+            else:
+                problem_log["status"] = "failed"
+                problem_log["error"] = "Not parsable"
+                stats["failed_parsable"] += 1
+                print("❌ Not parsable")
+
+            self.save_result(problem_id, lean_code, problem_log)
+
+        # Complete run metadata
+        self.run_metadata["end_time"] = datetime.now().isoformat()
+        self.run_metadata["stats"] = stats
+        self.run_metadata["batch_id"] = batch_id
+
+        # Print summary
+        print(f"\n\n{'='*80}")
+        print("BATCH PROCESSING SUMMARY")
+        print(f"{'='*80}")
+        print(f"Batch ID: {batch_id}")
+        print(f"Total problems: {stats['total']}")
+        print(f"✅ Successful: {stats['successful']}")
+        print(f"⏭️  Skipped: {stats['skipped']}")
+        print(f"❌ Failed (API): {stats['failed_api']}")
+        print(f"❌ Failed (Compilation): {stats['failed_compilation']}")
+        print(f"❌ Failed (Not parsable): {stats['failed_parsable']}")
+        print(f"{'='*80}\n")
+
+        # Save comprehensive run summary
+        run_summary_file = self.run_dir / "run_summary.json"
+        with open(run_summary_file, "w") as f:
+            json.dump(self.run_metadata, f, indent=2)
+        print(f"📊 Run summary saved to: {run_summary_file}")
+        print(f"📁 All results in: {self.run_dir}\n")
+
+        return stats

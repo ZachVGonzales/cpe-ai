@@ -33,17 +33,17 @@ def check_python_packages():
     for package in required:
         try:
             __import__(package)
-            print(f"  ✅ {package}")
+            print(f"  {package}")
         except ImportError:
-            print(f"  ❌ {package}")
+            print(f"  {package}")
             missing.append(package)
 
     if missing:
-        print(f"\n❌ Missing packages: {', '.join(missing)}")
+        print(f"\nMissing packages: {', '.join(missing)}")
         print("Install with: pip install -r requirements.txt")
         return False
 
-    print("✅ All required packages installed\n")
+    print("All required packages installed\n")
     return True
 
 
@@ -58,9 +58,9 @@ def check_lean_installation():
         )
         if result.returncode == 0:
             version = result.stdout.strip()
-            print(f"  ✅ lean: {version}")
+            print(f"  lean: {version}")
         else:
-            print("  ❌ lean command failed")
+            print("  lean command failed")
             return False
 
         # Check lake
@@ -69,16 +69,16 @@ def check_lean_installation():
         )
         if result.returncode == 0:
             version = result.stdout.strip()
-            print(f"  ✅ lake: {version}")
+            print(f"  lake: {version}")
         else:
-            print("  ❌ lake command failed")
+            print("  lake command failed")
             return False
 
-        print("✅ Lean 4 is properly installed\n")
+        print("Lean 4 is properly installed\n")
         return True
 
     except FileNotFoundError:
-        print("  ❌ lean/lake not found in PATH")
+        print("  lean/lake not found in PATH")
         print("\nInstall Lean 4 with:")
         print(
             "  curl -L https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh"
@@ -86,7 +86,7 @@ def check_lean_installation():
         print("  (then restart terminal)")
         return False
     except Exception as e:
-        print(f"  ❌ Error checking Lean: {e}")
+        print(f"  Error checking Lean: {e}")
         return False
 
 
@@ -97,7 +97,7 @@ def check_api_key():
     # Check if .env file exists
     env_file = Path(".env")
     if env_file.exists():
-        print(f"  ✅ .env file found")
+        print(f"  .env file found")
     else:
         print(f"  ⚠️  .env file not found (optional)")
         print(f"     You can copy .env.example to .env and add your API key")
@@ -106,11 +106,11 @@ def check_api_key():
     if api_key:
         # Don't print the actual key, just confirm it exists
         masked = api_key[:7] + "..." + api_key[-4:] if len(api_key) > 11 else "***"
-        print(f"  ✅ OPENAI_API_KEY set: {masked}")
-        print("✅ API key is configured\n")
+        print(f"  OPENAI_API_KEY set: {masked}")
+        print("API key is configured\n")
         return True
     else:
-        print("  ❌ OPENAI_API_KEY environment variable not set")
+        print("  OPENAI_API_KEY environment variable not set")
         print("\nSet your API key with:")
         print("  1. Copy .env.example to .env: cp .env.example .env")
         print("  2. Edit .env and add your API key")
@@ -126,11 +126,11 @@ def check_lean_check_script():
     script_path = Path("scripts/data/lean-check.py")
 
     if not script_path.exists():
-        print(f"  ❌ Script not found at: {script_path}")
+        print(f"  Script not found at: {script_path}")
         print("\nMake sure you're running from the project root directory")
         return False
 
-    print(f"  ✅ Found at: {script_path}")
+    print(f"  Found at: {script_path}")
 
     # Try to run it with --help
     try:
@@ -141,14 +141,14 @@ def check_lean_check_script():
             timeout=5,
         )
         if result.returncode == 0:
-            print("  ✅ Script is executable")
-            print("✅ lean-check.py is accessible\n")
+            print("  Script is executable")
+            print("lean-check.py is accessible\n")
             return True
         else:
-            print("  ❌ Script returned error")
+            print("  Script returned error")
             return False
     except Exception as e:
-        print(f"  ❌ Error running script: {e}")
+        print(f"  Error running script: {e}")
         return False
 
 
@@ -159,11 +159,11 @@ def check_process_script():
     script_path = Path("scripts/process_opc.py")
 
     if not script_path.exists():
-        print(f"  ❌ Script not found at: {script_path}")
+        print(f"  Script not found at: {script_path}")
         return False
 
-    print(f"  ✅ Found at: {script_path}")
-    print("✅ process_opc.py is available\n")
+    print(f"  Found at: {script_path}")
+    print("process_opc.py is available\n")
     return True
 
 
@@ -178,8 +178,8 @@ def check_data_files():
         print("  (This is optional)")
         return True  # Not critical
 
-    print(f"  ✅ Found example data: {data_file}")
-    print("✅ Example data available\n")
+    print(f"  Found example data: {data_file}")
+    print("Example data available\n")
     return True
 
 
@@ -190,7 +190,7 @@ def setup_lean_project():
     # Check if lakefile.lean exists
     lakefile_path = Path("lakefile.lean")
     if not lakefile_path.exists():
-        print("  ❌ lakefile.lean not found. Creating a default lakefile...")
+        print("  lakefile.lean not found. Creating a default lakefile...")
         lakefile_content = """import Lake
 open Lake DSL
 
@@ -207,7 +207,7 @@ lean_lib CpeAi {
 """
         with open(lakefile_path, "w") as f:
             f.write(lakefile_content)
-        print("  ✅ Created lakefile.lean")
+        print("  Created lakefile.lean")
 
     # Run lake update
     try:
@@ -216,16 +216,16 @@ lean_lib CpeAi {
             ["lake", "update"], capture_output=True, text=True, timeout=30
         )
         if result.returncode == 0:
-            print("  ✅ lake update completed successfully")
+            print("  lake update completed successfully")
         else:
-            print("  ❌ lake update failed")
+            print("  lake update failed")
             print(result.stderr)
             return False
     except Exception as e:
-        print(f"  ❌ Error running lake update: {e}")
+        print(f"  Error running lake update: {e}")
         return False
 
-    print("✅ Lean project setup complete\n")
+    print("Lean project setup complete\n")
     return True
 
 
@@ -251,7 +251,7 @@ def main():
             success = check_func()
             results.append((name, success))
         except Exception as e:
-            print(f"❌ Unexpected error in {name}: {e}\n")
+            print(f"Unexpected error in {name}: {e}\n")
             results.append((name, False))
 
     print("=" * 80)
@@ -261,14 +261,14 @@ def main():
     all_passed = all(success for _, success in results)
 
     for name, success in results:
-        status = "✅ PASS" if success else "❌ FAIL"
+        status = "PASS" if success else "FAIL"
         print(f"{status}: {name}")
 
     print("=" * 80)
 
     if all_passed:
         print(
-            "\n✅ All checks passed! You're ready to use the OPC processing pipeline."
+            "\nAll checks passed! You're ready to use the OPC processing pipeline."
         )
         print("\nNext steps:")
         print("1. Run a test: ./scripts/example_run.sh")
@@ -278,7 +278,7 @@ def main():
         return 0
     else:
         print(
-            "\n❌ Some checks failed. Please address the issues above before proceeding."
+            "\nSome checks failed. Please address the issues above before proceeding."
         )
         return 1
 

@@ -19,7 +19,7 @@ def compile_lean_file(lean_file: Path):
 
     # Ensure the file exists
     if not lean_file.exists():
-        print(f"❌ Lean file not found: {lean_file}")
+        print(f"Lean file not found: {lean_file}")
         return False
 
     # Run lake build
@@ -29,16 +29,16 @@ def compile_lean_file(lean_file: Path):
             ["lake", "build"], capture_output=True, text=True, timeout=60
         )
         if result.returncode == 0:
-            print("✅ Compilation successful")
+            print("Compilation successful")
             return True
         else:
-            print("❌ Compilation failed")
+            print("Compilation failed")
             print("--- Error Output ---")
             print(result.stderr)
             print("--- End of Error Output ---")
             return False
     except Exception as e:
-        print(f"❌ Error during compilation: {e}")
+        print(f"Error during compilation: {e}")
         return False
 
 

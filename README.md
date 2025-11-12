@@ -110,7 +110,7 @@ python scripts/process_opc.py data/OPC/generic-OPC.json --batch
 
 - 💰 **50% cost savings** compared to standard API calls
 - 🔄 Processes all problems in a single batch request
-- 📊 Same validation and output format
+- Same validation and output format
 
 **Trade-offs:**
 
@@ -161,12 +161,12 @@ The retrieve script:
 
 The `process_opc.py` script:
 
-1. ✅ Reads math problems from JSON files
-2. ✅ Sends each problem to OpenAI API with a specialized system prompt
-3. ✅ Receives Lean 4 code with parsable proof steps
-4. ✅ Tests if the code compiles using `lean-check.py`
-5. ✅ Validates that proof steps are properly formatted
-6. ✅ Saves successful results to a dataset directory
+1. Reads math problems from JSON files
+2. Sends each problem to OpenAI API with a specialized system prompt
+3. Receives Lean 4 code with parsable proof steps
+4. Tests if the code compiles using `lean-check.py`
+5. Validates that proof steps are properly formatted
+6. Saves successful results to a dataset directory
 
 ### Output
 

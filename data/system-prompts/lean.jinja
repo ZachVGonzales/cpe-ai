@@ -253,33 +253,33 @@ If you encounter ambiguity or cannot translate certain portions:
 ## Common Errors to Avoid:
 
 ### 1. Syntax Errors
-- ❌ **WRONG**: `∑ k in Finset.Icc 1 n, ...` - This will cause "unexpected token 'in'" error
-- ✅ **CORRECT**: Use proper BigOperator syntax or alternative summation methods
+- **WRONG**: `∑ k in Finset.Icc 1 n, ...` - This will cause "unexpected token 'in'" error
+- **CORRECT**: Use proper BigOperator syntax or alternative summation methods
 - Use `∑ k : Fin n, ...` or `∑ k ∈ Finset.range n, ...` instead
 
 ### 2. Type Inference Issues
-- ❌ **WRONG**: Using `Nat.gcd_pos_iff` without explicit arguments when type inference fails
-- ✅ **CORRECT**: Provide explicit arguments: `Nat.gcd_pos_iff (a := a) (b := b)`
+- **WRONG**: Using `Nat.gcd_pos_iff` without explicit arguments when type inference fails
+- **CORRECT**: Provide explicit arguments: `Nat.gcd_pos_iff (a := a) (b := b)`
 - When you see errors like "don't know how to synthesize implicit argument", make arguments explicit
 
 ### 3. Method/Field Errors
-- ❌ **WRONG**: `hne.symm` on a negation - negations don't have `.symm`
-- ✅ **CORRECT**: Use `Ne.symm` or rewrite manually: `lt_of_le_of_ne hle (Ne.symm hne)`
+- **WRONG**: `hne.symm` on a negation - negations don't have `.symm`
+- **CORRECT**: Use `Ne.symm` or rewrite manually: `lt_of_le_of_ne hle (Ne.symm hne)`
 - Check that the method/field actually exists for the type you're working with
 
 ### 4. Function Signature Mismatches
-- ❌ **WRONG**: `Nat.exists_prime_and_dvd htwole` where `htwole : 2 ≤ n` but function expects `n ≠ 1`
-- ✅ **CORRECT**: Check function signatures in Mathlib and provide the right type of argument
+- **WRONG**: `Nat.exists_prime_and_dvd htwole` where `htwole : 2 ≤ n` but function expects `n ≠ 1`
+- **CORRECT**: Check function signatures in Mathlib and provide the right type of argument
 - Convert between equivalent conditions explicitly if needed
 
 ### 5. Unknown Constants
-- ❌ **WRONG**: `Nat.dvd_pow.mpr` - this constant may not exist in your Lean version
-- ✅ **CORRECT**: Use alternative lemmas or prove the statement directly
+- **WRONG**: `Nat.dvd_pow.mpr` - this constant may not exist in your Lean version
+- **CORRECT**: Use alternative lemmas or prove the statement directly
 - Common alternatives: `Nat.pow_dvd_pow_iff`, `dvd_trans`, or manual proofs
 
 ### 6. Argument Order and Type Errors
-- ❌ **WRONG**: Passing arguments in wrong order or with wrong types
-- ✅ **CORRECT**: Check the function signature carefully
+- **WRONG**: Passing arguments in wrong order or with wrong types
+- **CORRECT**: Check the function signature carefully
 - Example: If function expects `(h : p ^ 2 ∣ n)` but you pass `(h : p ^ 2 ∣ n → False)`, use `by exact h` to convert
 
 ### 7. Implicit vs Explicit Arguments
@@ -306,16 +306,16 @@ The generated code must:
 7. Have at least one parsable proof step with matching `[STEP_X:]` and `[END_STEP_X]` markers
 
 **Common Mistakes That Will Cause Compilation Failure:**
-- ❌ Starting the file with prose text instead of Lean code
-- ❌ Using slash notation in imports: `import Mathlib/Data/Nat` 
-- ❌ Placing imports after other code (including `set_option` or comments)
-- ❌ Placing comments before imports
-- ❌ Missing or mismatched step markers
-- ❌ Using `sorry` without explicit instruction
-- ❌ Using `Finset.Icc` syntax incorrectly causing "unexpected token 'in'" errors
-- ❌ Calling methods that don't exist on a type (e.g., `.symm` on negations)
-- ❌ Using API functions that don't exist in Lean 4.25.0-rc2
-- ❌ Not making arguments explicit when type inference fails
+- Starting the file with prose text instead of Lean code
+- Using slash notation in imports: `import Mathlib/Data/Nat` 
+- Placing imports after other code (including `set_option` or comments)
+- Placing comments before imports
+- Missing or mismatched step markers
+- Using `sorry` without explicit instruction
+- Using `Finset.Icc` syntax incorrectly causing "unexpected token 'in'" errors
+- Calling methods that don't exist on a type (e.g., `.symm` on negations)
+- Using API functions that don't exist in Lean 4.25.0-rc2
+- Not making arguments explicit when type inference fails
 
 **Correct File Order:**
 1. FIRST: All `import` statements
@@ -327,27 +327,27 @@ The generated code must:
 
 Instead of:
 ```lean
--- ❌ WRONG - will cause "unexpected token 'in'" error
+-- WRONG - will cause "unexpected token 'in'" error
 def sumPowTotient (n : Nat) : Nat :=
   ∑ k in Finset.Icc 1 n, k ^ Nat.totient n
 ```
 
 Use:
 ```lean
--- ✅ CORRECT
+-- CORRECT
 def sumPowTotient (n : Nat) : Nat :=
   ∑ k ∈ Finset.Icc 1 n, k ^ Nat.totient n
 ```
 
 Instead of:
 ```lean
--- ❌ WRONG - type inference failure
+-- WRONG - type inference failure
 have := Nat.gcd_pos_iff.mpr ?_
 ```
 
 Use:
 ```lean
--- ✅ CORRECT - explicit arguments
+-- CORRECT - explicit arguments
 have := Nat.gcd_pos_iff (n := a) (m := b) |>.mpr hpos
 -- or
 have := (Nat.gcd_pos_iff : 0 < Nat.gcd a b ↔ _).mpr hpos
@@ -355,13 +355,13 @@ have := (Nat.gcd_pos_iff : 0 < Nat.gcd a b ↔ _).mpr hpos
 
 Instead of:
 ```lean
--- ❌ WRONG - .symm doesn't work on negations
+-- WRONG - .symm doesn't work on negations
 exact lt_of_le_of_ne hle hne.symm
 ```
 
 Use:
 ```lean
--- ✅ CORRECT - use Ne.symm or swap manually
+-- CORRECT - use Ne.symm or swap manually
 exact lt_of_le_of_ne hle (Ne.symm hne)
 -- or
 exact Nat.lt_of_le_of_ne hle fun h => hne h.symm
@@ -369,14 +369,14 @@ exact Nat.lt_of_le_of_ne hle fun h => hne h.symm
 
 Instead of:
 ```lean
--- ❌ WRONG - wrong argument type
+-- WRONG - wrong argument type
 obtain ⟨p, hp, hdvd⟩ := Nat.exists_prime_and_dvd htwole
 -- where htwole : 2 ≤ n but function expects n ≠ 1
 ```
 
 Use:
 ```lean
--- ✅ CORRECT - convert to expected type
+-- CORRECT - convert to expected type
 have hne1 : Nat.gcd a b ≠ 1 := hne
 obtain ⟨p, hp, hdvd⟩ := Nat.exists_prime_and_dvd hne1
 -- or prove the needed property first
@@ -384,27 +384,27 @@ obtain ⟨p, hp, hdvd⟩ := Nat.exists_prime_and_dvd hne1
 
 Instead of:
 ```lean
--- ❌ WRONG - API may not exist
+-- WRONG - API may not exist
 exact Nat.dvd_trans (Nat.dvd_pow.mpr ⟨p, _⟩) hpsq
 ```
 
 Use:
 ```lean
--- ✅ CORRECT - use proven alternatives
+-- CORRECT - use proven alternatives
 have : p ∣ p ^ 2 := Nat.dvd_pow_self p (Nat.succ_ne_zero 1)
 exact Nat.dvd_trans this hpsq
 ```
 
 Instead of:
 ```lean
--- ❌ WRONG - passing function where value expected
+-- WRONG - passing function where value expected
 exact Hnotdiv_sum p hp hpn hphi (by exact hp2not) hps
 -- where hp2not : p ^ 2 ∣ n → False
 ```
 
 Use:
 ```lean
--- ✅ CORRECT - call the function properly
+-- CORRECT - call the function properly
 exact hp2not (Hp2_div_sum p hp hpn hps)
 -- or restructure to avoid the issue
 ```
@@ -473,14 +473,14 @@ theorem theorem_name (hypothesis1 : Type) (hypothesis2 : Condition) : Conclusion
 **Import Syntax (CRITICAL):**
 - **ALWAYS use the single import**: `import Mathlib`
 - **NEVER import specific Mathlib modules** as module paths may have changed between Mathlib versions
-- **DO NOT use slash notation**: ~~`import Mathlib/Module/Name`~~ ❌ WRONG
-- **DO NOT use dot notation for specific modules**: ~~`import Mathlib.Data.Nat.Basic`~~ ❌ WRONG (paths may be outdated)
+- **DO NOT use slash notation**: ~~`import Mathlib/Module/Name`~~ WRONG
+- **DO NOT use dot notation for specific modules**: ~~`import Mathlib.Data.Nat.Basic`~~ WRONG (paths may be outdated)
 - Examples:
-  - ✅ CORRECT: `import Mathlib`
-  - ❌ WRONG: `import Mathlib.Data.Nat.Basic` (module path may not exist)
-  - ❌ WRONG: `import Mathlib.Algebra.Ring.Defs` (module path may not exist)
-  - ❌ WRONG: `import Mathlib.Tactic` (module path may not exist)
-  - ❌ WRONG: `import Mathlib/Data/Nat/Basic` (slash notation)
+  - CORRECT: `import Mathlib`
+  - WRONG: `import Mathlib.Data.Nat.Basic` (module path may not exist)
+  - WRONG: `import Mathlib.Algebra.Ring.Defs` (module path may not exist)
+  - WRONG: `import Mathlib.Tactic` (module path may not exist)
+  - WRONG: `import Mathlib/Data/Nat/Basic` (slash notation)
 
 **Other Requirements:**
 - When imports are needed, **ONLY use** `import Mathlib` for mathematical content

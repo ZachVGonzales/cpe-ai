@@ -42,12 +42,12 @@ def test_batch_creation():
     batch_dir = Path("test_batch_output")
     batch_dir.mkdir(exist_ok=True)
 
-    print(f"✅ Client initialized: {client.model}")
-    print(f"✅ Test requests prepared: {len(test_requests)}")
-    print(f"✅ Batch directory created: {batch_dir}")
+    print(f"Client initialized: {client.model}")
+    print(f"Test requests prepared: {len(test_requests)}")
+    print(f"Batch directory created: {batch_dir}")
     print("\n📝 Sample request structure:")
     print(json.dumps(test_requests[0], indent=2))
-    print("\n✅ Batch API functionality is ready to use!")
+    print("\nBatch API functionality is ready to use!")
     print("\nTo actually submit a batch, run:")
     print("  python scripts/process_opc.py data/OPC/generic-OPC.json --batch")
 

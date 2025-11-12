@@ -128,7 +128,7 @@ class OpenAIClient:
             return batch.id, str(input_file)
 
         except Exception as e:
-            print(f"❌ Error creating batch: {e}")
+            print(f"Error creating batch: {e}")
             return None, str(e)
 
     def check_batch_status(self, batch_id: str) -> Tuple[str, Dict]:
@@ -165,7 +165,7 @@ class OpenAIClient:
                 if hasattr(batch, "errors") and batch.errors:
                     info["errors"] = batch.errors
                     # Print detailed error information
-                    print(f"\n❌ Batch failed with errors:")
+                    print(f"\nBatch failed with errors:")
                     if hasattr(batch.errors, "data"):
                         for error in batch.errors.data:
                             print(f"   - {error}")
@@ -175,7 +175,7 @@ class OpenAIClient:
             return batch.status, info
 
         except Exception as e:
-            print(f"❌ Error checking batch status: {e}")
+            print(f"Error checking batch status: {e}")
             return "error", {"error": str(e)}
 
     def retrieve_batch_results(
@@ -227,7 +227,7 @@ class OpenAIClient:
             return results
 
         except Exception as e:
-            print(f"❌ Error retrieving batch results: {e}")
+            print(f"Error retrieving batch results: {e}")
             return None
 
     def wait_for_batch(
@@ -244,14 +244,14 @@ class OpenAIClient:
         Returns:
             Final batch status
         """
-        print(f"⏳ Waiting for batch {batch_id} to complete...")
+        print(f"Waiting for batch {batch_id} to complete...")
 
         elapsed = 0
         while elapsed < max_wait:
             status, info = self.check_batch_status(batch_id)
 
             if status in ["completed", "failed", "cancelled", "expired"]:
-                print(f"\n✅ Batch {status}!")
+                print(f"\nBatch {status}!")
                 if status == "completed":
                     counts = info["request_counts"]
                     print(f"   Completed: {counts['completed']}/{counts['total']}")

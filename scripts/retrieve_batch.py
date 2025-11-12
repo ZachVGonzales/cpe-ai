@@ -43,10 +43,10 @@ def main():
     status, info = client.check_batch_status(args.batch_id)
 
     if status != "completed":
-        print(f"❌ Batch not completed. Status: {status}")
+        print(f"Batch not completed. Status: {status}")
         return
 
-    print(f"✅ Batch completed!")
+    print(f"Batch completed!")
     print(f"   Total: {info['request_counts']['total']}")
     print(f"   Completed: {info['request_counts']['completed']}")
     print(f"   Failed: {info['request_counts']['failed']}\n")
@@ -60,10 +60,10 @@ def main():
     results = client.retrieve_batch_results(args.batch_id, output_file)
 
     if not results:
-        print("❌ Failed to retrieve results")
+        print("Failed to retrieve results")
         return
 
-    print(f"\n📊 Retrieved {len(results)} results\n")
+    print(f"\nRetrieved {len(results)} results\n")
 
     # Save individual results
     for custom_id, response in results.items():
@@ -77,7 +77,7 @@ def main():
             lean_file = output_dir / f"{custom_id}.lean"
             lean_file.write_text(lean_code)
 
-            print(f"✅ {custom_id}")
+            print(f"{custom_id}")
             print(f"   Response: {response_file}")
             print(f"   Lean code: {lean_file}")
 
@@ -116,9 +116,9 @@ def main():
 
             print()
         else:
-            print(f"❌ {custom_id} - No response")
+            print(f"{custom_id} - No response")
 
-    print(f"\n📁 All results saved to: {output_dir}")
+    print(f"\nAll results saved to: {output_dir}")
 
 
 if __name__ == "__main__":

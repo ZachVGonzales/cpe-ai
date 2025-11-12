@@ -97,7 +97,7 @@ class LeanCodeProcessor:
             "use_rag": use_rag,
         }
 
-        print(f"📁 Run directory: {self.run_dir}")
+        print(f"Run directory: {self.run_dir}")
 
     def process_problem(
         self, problem: Dict[str, Any]
@@ -132,7 +132,7 @@ class LeanCodeProcessor:
         if self.skip_complex_geometry:
             skip, reason = self._should_skip_problem(problem_text)
             if skip:
-                print(f"⏭️  Skipping problem: {reason}")
+                print(f"Skipping problem: {reason}")
                 problem_log["status"] = "skipped"
                 problem_log["skip_reason"] = reason
                 problem_log["end_time"] = datetime.now().isoformat()
@@ -160,7 +160,7 @@ class LeanCodeProcessor:
                     "usage": rag_result.get("usage", {}),
                 }
             except Exception as e:
-                print(f"❌ RAG query failed: {e}")
+                print(f"RAG query failed: {e}")
                 response = None
                 problem_log["rag_error"] = str(e)
         else:
@@ -176,7 +176,7 @@ class LeanCodeProcessor:
         }
 
         if not response:
-            print("❌ Failed to get response from OpenAI API")
+            print("Failed to get response from OpenAI API")
             problem_log["status"] = "failed"
             problem_log["error"] = "No response from API"
             problem_log["end_time"] = datetime.now().isoformat()
@@ -201,14 +201,14 @@ class LeanCodeProcessor:
         }
 
         if not compile_success:
-            print("❌ Lean code does not compile")
+            print("Lean code does not compile")
             problem_log["status"] = "failed"
             problem_log["error"] = "Compilation failed"
             problem_log["end_time"] = datetime.now().isoformat()
             problem_log["total_duration_seconds"] = round(time.time() - start_time, 2)
             return False, lean_code, problem_log
 
-        print("✅ Lean code compiles successfully")
+        print("Lean code compiles successfully")
 
         # Check if code has parsable steps
         print("\nChecking for parsable proof steps...")
@@ -217,14 +217,14 @@ class LeanCodeProcessor:
         problem_log["parsability"] = {"is_parsable": parsable, "step_count": step_count}
 
         if not parsable:
-            print("❌ Code does not have properly formatted proof steps")
+            print("Code does not have properly formatted proof steps")
             problem_log["status"] = "failed"
             problem_log["error"] = "Not parsable"
             problem_log["end_time"] = datetime.now().isoformat()
             problem_log["total_duration_seconds"] = round(time.time() - start_time, 2)
             return False, lean_code, problem_log
 
-        print(f"✅ Code has {step_count} parsable proof steps")
+        print(f"Code has {step_count} parsable proof steps")
 
         # Success!
         problem_log["status"] = "success"
@@ -298,7 +298,7 @@ class LeanCodeProcessor:
             lean_file = self.run_dir / f"{problem_id}.lean"
             with open(lean_file, "w") as f:
                 f.write(lean_code)
-            print(f"\n✅ Saved results to:")
+            print(f"\nSaved results to:")
             print(f"   - {json_file}")
             print(f"   - {lean_file}")
         else:
@@ -337,7 +337,7 @@ class LeanCodeProcessor:
             problems = problems[:max_problems]
 
         print(f"Processing {len(problems)} problem(s)...")
-        print(f"📁 Run directory: {self.run_dir}\n")
+        print(f"Run directory: {self.run_dir}\n")
 
         stats = {
             "total": len(problems),
@@ -393,19 +393,19 @@ class LeanCodeProcessor:
         print("SUMMARY")
         print(f"{'='*80}")
         print(f"Total problems: {stats['total']}")
-        print(f"✅ Successful: {stats['successful']}")
-        print(f"⏭️  Skipped: {stats['skipped']}")
-        print(f"❌ Failed (API): {stats['failed_api']}")
-        print(f"❌ Failed (Compilation): {stats['failed_compilation']}")
-        print(f"❌ Failed (Not parsable): {stats['failed_parsable']}")
+        print(f"Successful: {stats['successful']}")
+        print(f"Skipped: {stats['skipped']}")
+        print(f"Failed (API): {stats['failed_api']}")
+        print(f"Failed (Compilation): {stats['failed_compilation']}")
+        print(f"Failed (Not parsable): {stats['failed_parsable']}")
         print(f"{'='*80}\n")
 
         # Save comprehensive run summary
         run_summary_file = self.run_dir / "run_summary.json"
         with open(run_summary_file, "w") as f:
             json.dump(self.run_metadata, f, indent=2)
-        print(f"📊 Run summary saved to: {run_summary_file}")
-        print(f"📁 All results in: {self.run_dir}\n")
+        print(f"Run summary saved to: {run_summary_file}")
+        print(f"All results in: {self.run_dir}\n")
 
         return stats
 
@@ -451,7 +451,7 @@ class LeanCodeProcessor:
             if self.skip_complex_geometry:
                 skip, reason = self._should_skip_problem(problem_text)
                 if skip:
-                    print(f"⏭️  Skipping {problem_id}: {reason}")
+                    print(f"Skipping {problem_id}: {reason}")
                     skipped_count += 1
                     # Save skip record
                     skip_log = {
@@ -498,7 +498,7 @@ class LeanCodeProcessor:
         )
 
         if not batch_id:
-            print(f"❌ Failed to create batch: {input_file_path}")
+            print(f"Failed to create batch: {input_file_path}")
             return {"error": "batch_creation_failed"}
 
         # Save batch info
@@ -513,14 +513,14 @@ class LeanCodeProcessor:
         with open(batch_info_file, "w") as f:
             json.dump(batch_info, f, indent=2)
 
-        print(f"💾 Batch info saved to: {batch_info_file}")
-        print(f"\n⏳ Waiting for batch to complete (this may take a while)...")
+        print(f"Batch info saved to: {batch_info_file}")
+        print(f"\nWaiting for batch to complete (this may take a while)...")
 
         # Wait for batch to complete
         final_status = self.openai_client.wait_for_batch(batch_id)
 
         if final_status != "completed":
-            print(f"❌ Batch did not complete successfully: {final_status}")
+            print(f"Batch did not complete successfully: {final_status}")
             return {"error": f"batch_{final_status}"}
 
         # Retrieve results
@@ -528,10 +528,10 @@ class LeanCodeProcessor:
         results = self.openai_client.retrieve_batch_results(batch_id, output_file)
 
         if not results:
-            print("❌ Failed to retrieve batch results")
+            print("Failed to retrieve batch results")
             return {"error": "batch_retrieval_failed"}
 
-        print(f"\n📊 Processing {len(results)} batch results...")
+        print(f"\nProcessing {len(results)} batch results...")
 
         # Process results - need to map back from unique custom_ids
         stats = {
@@ -569,7 +569,7 @@ class LeanCodeProcessor:
             response = results.get(unique_custom_id)
 
             if not response:
-                print(f"❌ No response from API for {problem_id}")
+                print(f"No response from API for {problem_id}")
                 problem_log = {
                     "problem_id": problem_id,
                     "problem": problem.get("problem", ""),
@@ -617,17 +617,17 @@ class LeanCodeProcessor:
             if compile_success and parsable:
                 problem_log["status"] = "success"
                 stats["successful"] += 1
-                print(f"✅ Success! {step_count} parsable steps")
+                print(f"Success! {step_count} parsable steps")
             elif not compile_success:
                 problem_log["status"] = "failed"
                 problem_log["error"] = "Compilation failed"
                 stats["failed_compilation"] += 1
-                print("❌ Compilation failed")
+                print("Compilation failed")
             else:
                 problem_log["status"] = "failed"
                 problem_log["error"] = "Not parsable"
                 stats["failed_parsable"] += 1
-                print("❌ Not parsable")
+                print("Not parsable")
 
             self.save_result(problem_id, lean_code, problem_log)
 
@@ -642,18 +642,18 @@ class LeanCodeProcessor:
         print(f"{'='*80}")
         print(f"Batch ID: {batch_id}")
         print(f"Total problems: {stats['total']}")
-        print(f"✅ Successful: {stats['successful']}")
-        print(f"⏭️  Skipped: {stats['skipped']}")
-        print(f"❌ Failed (API): {stats['failed_api']}")
-        print(f"❌ Failed (Compilation): {stats['failed_compilation']}")
-        print(f"❌ Failed (Not parsable): {stats['failed_parsable']}")
+        print(f"Successful: {stats['successful']}")
+        print(f"Skipped: {stats['skipped']}")
+        print(f"Failed (API): {stats['failed_api']}")
+        print(f"Failed (Compilation): {stats['failed_compilation']}")
+        print(f"Failed (Not parsable): {stats['failed_parsable']}")
         print(f"{'='*80}\n")
 
         # Save comprehensive run summary
         run_summary_file = self.run_dir / "run_summary.json"
         with open(run_summary_file, "w") as f:
             json.dump(self.run_metadata, f, indent=2)
-        print(f"📊 Run summary saved to: {run_summary_file}")
-        print(f"📁 All results in: {self.run_dir}\n")
+        print(f"Run summary saved to: {run_summary_file}")
+        print(f"All results in: {self.run_dir}\n")
 
         return stats

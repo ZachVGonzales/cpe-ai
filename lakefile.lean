@@ -1,14 +1,10 @@
 import Lake
 open Lake DSL
 
-package cpe_ai {
-  -- add configuration options here
-}
+package cpe_ai
 
 require mathlib from git
-  "https://github.com/leanprover-community/mathlib4.git"
+  "https://github.com/leanprover-community/mathlib4"
 
--- Define a library target
-lean_lib CpeAi {
-  -- add library configuration options here
-}
+@[default_target]
+lean_lib CpeAi

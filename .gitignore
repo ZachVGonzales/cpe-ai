@@ -209,3 +209,12 @@ __marimo__/
 dataset/
 .lake
 batch_results
+
+# cache
+cache/
+
+# too much data
+data/vector-store/raw-docs/
+data/vector-store/processed-docs/
+.lake
+data/vector-store/processed-docs/

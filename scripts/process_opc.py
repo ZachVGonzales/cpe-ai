@@ -66,6 +66,17 @@ def main():
         action="store_true",
         help="Use OpenAI Batch API for processing (cheaper, but takes longer)",
     )
+    parser.add_argument(
+        "--use-rag",
+        action="store_true",
+        default=True,
+        help="Use RAG service with vector store retrieval (default: True)",
+    )
+    parser.add_argument(
+        "--no-rag",
+        action="store_true",
+        help="Disable RAG and use direct OpenAI API",
+    )
 
     args = parser.parse_args()
 
@@ -81,6 +92,9 @@ def main():
         # Get API key
         api_key = get_api_key(args.api_key)
 
+        # Determine RAG usage
+        use_rag = not args.no_rag if hasattr(args, 'no_rag') else args.use_rag
+
         processor = LeanCodeProcessor(
             api_key=api_key,
             model=args.model,
@@ -88,6 +102,7 @@ def main():
             dataset_dir=args.dataset_dir,
             reasoning_effort=args.reasoning_effort,
             skip_complex_geometry=not args.no_skip_geometry,
+            use_rag=use_rag,
         )
 
         # Use batch mode or regular mode

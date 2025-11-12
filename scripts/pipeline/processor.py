@@ -9,6 +9,10 @@ from typing import Any, Dict, Optional, Tuple
 import time
 import sys
 
+# Add parent directory to path for importing cpe_ai package
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root / "src"))
+
 # Handle relative imports when run as script or module
 try:
     from .lean_compiler import (
@@ -26,6 +30,10 @@ except ImportError:
     )
     from openai_client import OpenAIClient, load_system_prompt
 
+# Import RAG service
+from cpe_ai.services.rag_service import RAGService
+from cpe_ai.config.settings import OPENAI_API_KEY, OPENAI_MODEL
+
 
 class LeanCodeProcessor:
     """Process math problems through OpenAI API and test Lean code."""
@@ -38,6 +46,7 @@ class LeanCodeProcessor:
         dataset_dir: str = "dataset",
         reasoning_effort: str = "high",
         skip_complex_geometry: bool = True,
+        use_rag: bool = True,
     ):
         """
         Initialize the processor.
@@ -49,12 +58,28 @@ class LeanCodeProcessor:
             dataset_dir: Directory to save successful outputs
             reasoning_effort: Reasoning effort level (low, medium, high)
             skip_complex_geometry: Skip problems with complex geometry
+            use_rag: Whether to use RAG service for retrieval-augmented generation
         """
-        self.openai_client = OpenAIClient(api_key, model, reasoning_effort)
         self.model = model
         self.reasoning_effort = reasoning_effort
         self.skip_complex_geometry = skip_complex_geometry
-        self.system_prompt = load_system_prompt(system_prompt_file)
+        self.use_rag = use_rag
+        
+        # Initialize RAG service if enabled, otherwise use direct OpenAI client
+        if use_rag:
+            print("🔍 Initializing RAG service with vector store retrieval...")
+            # Use the Jinja template from system_prompt_file if provided
+            template_path = system_prompt_file if system_prompt_file else None
+            self.rag_service = RAGService(
+                openai_api_key=api_key,
+                openai_model=model,
+                prompt_template_path=template_path
+            )
+            self.system_prompt = None  # RAG service handles prompting
+        else:
+            print("📝 Using direct OpenAI API without RAG...")
+            self.openai_client = OpenAIClient(api_key, model, reasoning_effort)
+            self.system_prompt = load_system_prompt(system_prompt_file)
 
         # Create timestamped run directory
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -69,6 +94,7 @@ class LeanCodeProcessor:
             "reasoning_effort": reasoning_effort,
             "skip_complex_geometry": skip_complex_geometry,
             "system_prompt_file": system_prompt_file,
+            "use_rag": use_rag,
         }
 
         print(f"📁 Run directory: {self.run_dir}")
@@ -119,15 +145,34 @@ class LeanCodeProcessor:
         user_prompt = self._create_user_prompt(problem)
         problem_log["user_prompt"] = user_prompt
 
-        # Call OpenAI API
-        print("Calling OpenAI API...")
+        # Call OpenAI API (with or without RAG)
         api_start = time.time()
-        response = self.openai_client.call_api(self.system_prompt, user_prompt)
+        
+        if self.use_rag:
+            print("Calling OpenAI API with RAG retrieval...")
+            try:
+                rag_result = self.rag_service.query(
+                    query=user_prompt,
+                )
+                response = rag_result.get("response")
+                problem_log["rag_info"] = {
+                    "context_sources": rag_result.get("context_sources", []),
+                    "usage": rag_result.get("usage", {}),
+                }
+            except Exception as e:
+                print(f"❌ RAG query failed: {e}")
+                response = None
+                problem_log["rag_error"] = str(e)
+        else:
+            print("Calling OpenAI API without RAG...")
+            response = self.openai_client.call_api(self.system_prompt, user_prompt)
+        
         api_duration = time.time() - api_start
 
         problem_log["api_call"] = {
             "duration_seconds": round(api_duration, 2),
             "model": self.model,
+            "use_rag": self.use_rag,
         }
 
         if not response:

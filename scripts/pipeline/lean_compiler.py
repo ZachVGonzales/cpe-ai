@@ -4,7 +4,6 @@ Lean code compilation and validation utilities.
 
 import re
 import subprocess
-import uuid
 from pathlib import Path
 from typing import Tuple
 
@@ -22,21 +21,21 @@ def test_lean_compilation(lean_code: str, project_root: Path) -> Tuple[bool, str
     Returns:
         Tuple of (success, output)
     """
-    # Create temporary Lean file in the CpeAi library directory
-    lib_dir = project_root / "CpeAi"
-    lib_dir.mkdir(exist_ok=True)
-
-    # Use a unique temporary filename
-    temp_filename = f"TempTest_{uuid.uuid4().hex[:8]}.lean"
-    temp_file = lib_dir / temp_filename
+    # Write to the main CpeAi.lean file
+    cpeai_file = project_root / "CpeAi.lean"
+    
+    # Backup the original file if it exists
+    backup_content = None
+    if cpeai_file.exists():
+        backup_content = cpeai_file.read_text()
 
     try:
-        # Write the Lean code to the temp file
-        temp_file.write_text(lean_code)
+        # Write the Lean code to CpeAi.lean
+        cpeai_file.write_text(lean_code)
 
-        print(f"Temporary Lean file: {temp_file}")
+        print(f"Testing Lean file: {cpeai_file}")
 
-        # Run lake build in the project root
+        # Run lake build to compile the entire project
         result = subprocess.run(
             ["lake", "build"],
             cwd=str(project_root),
@@ -49,30 +48,43 @@ def test_lean_compilation(lean_code: str, project_root: Path) -> Tuple[bool, str
         output = result.stdout + result.stderr
 
         # Log the compilation output for debugging
-        print("Compilation output:")
-        print(output)
+        if success:
+            print("✓ Compilation successful")
+        else:
+            print("✗ Compilation failed")
+        
+        if output.strip():
+            print("Compilation output:")
+            print(output)
+        else:
+            print("(No compilation output)")
 
         return success, output
 
     except subprocess.TimeoutExpired:
-        print(f"Compilation timed out for file: {temp_file}")
+        print(f"Compilation timed out for file: {cpeai_file}")
         return False, f"Compilation timed out after {LEAN_BUILD_TIMEOUT} seconds"
     except Exception as e:
-        print(f"Error running lake build for file: {temp_file}")
+        print(f"Error running lake build for file: {cpeai_file}")
         print(f"Exception: {e}")
         return False, f"Error running lake build: {e}"
     finally:
-        # Clean up temp file
-        try:
-            if temp_file.exists():
-                temp_file.unlink()
-        except Exception as e:
-            print(f"Warning: Could not delete temp file {temp_file}: {e}")
+        # Restore the original file if backup exists
+        if backup_content is not None:
+            try:
+                cpeai_file.write_text(backup_content)
+                print(f"Restored original content to {cpeai_file}")
+            except Exception as e:
+                print(f"Warning: Could not restore original file {cpeai_file}: {e}")
 
 
 def check_parsable_steps(lean_code: str) -> Tuple[bool, int]:
     """
     Check if Lean code has parsable proof steps.
+    
+    This function checks for properly formatted proof steps with matching
+    [STEP_X: ...] and [END_STEP_X] markers. It handles multiple theorems
+    each with their own step sequences.
 
     Args:
         lean_code: The Lean code to check
@@ -80,9 +92,10 @@ def check_parsable_steps(lean_code: str) -> Tuple[bool, int]:
     Returns:
         Tuple of (is_parsable, step_count)
     """
-    # Look for STEP markers
-    step_start_pattern = r"--\s*\[STEP_\d+:"
-    step_end_pattern = r"--\s*\[END_STEP_\d+\]"
+    # Look for STEP markers with step numbers
+    # Pattern matches: -- [STEP_1: description] or --[STEP_1: description]
+    step_start_pattern = r"--\s*\[STEP_(\d+):"
+    step_end_pattern = r"--\s*\[END_STEP_(\d+)\]"
 
     step_starts = re.findall(step_start_pattern, lean_code)
     step_ends = re.findall(step_end_pattern, lean_code)
@@ -93,6 +106,20 @@ def check_parsable_steps(lean_code: str) -> Tuple[bool, int]:
 
     # Number of starts and ends should match
     if len(step_starts) != len(step_ends):
+        return False, len(step_starts)
+    
+    # Check that each STEP_X has a matching END_STEP_X
+    # We need to verify the numbers match in pairs
+    # This handles multiple proofs with separate step sequences
+    step_start_nums = [int(n) for n in step_starts]
+    step_end_nums = [int(n) for n in step_ends]
+    
+    # Sort both lists to match them up
+    step_start_nums.sort()
+    step_end_nums.sort()
+    
+    # They should be identical after sorting
+    if step_start_nums != step_end_nums:
         return False, len(step_starts)
 
     return True, len(step_starts)

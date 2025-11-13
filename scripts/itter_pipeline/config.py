@@ -18,6 +18,10 @@ RETRY_DELAY = 2
 BATCH_CHECK_INTERVAL = 60  # seconds between status checks
 BATCH_MAX_WAIT = 86400  # maximum wait time (24 hours)
 
+# RAG arguments
+API_VS_DOCS_DIR = "data/vector-store/raw-docs/lean_api_docs"
+INFO_VS_DOCS_DIR = "data/vector-store/raw-docs/lean-info"
+
 # Compilation configuration
 LEAN_BUILD_TIMEOUT = 60  # seconds
 

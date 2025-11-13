@@ -3,8 +3,8 @@ import sys
 
 def main():
     scraper = WebScraper(
-        base_url="https://leanprover-community.github.io/mathlib4_docs/index.html",
-        output_dir="data/vector-store/raw-docs/lean_api_docs",
+        base_url="https://leanprover-community.github.io/mathlib4_docs/Mathlib.html",
+        output_dir="data/vector-store/raw-docs/mathlib_only_docs",
         max_depth=5,
         delay=0.1,
     )

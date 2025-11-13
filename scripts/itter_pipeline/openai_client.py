@@ -7,10 +7,20 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime
+import glob
+import tempfile
+import subprocess
 
 from openai import OpenAI
 
-from .config import DEFAULT_SYSTEM_PROMPT, MAX_RETRIES, RETRY_DELAY
+from .config import (
+    DEFAULT_SYSTEM_PROMPT, 
+    MAX_RETRIES, 
+    RETRY_DELAY,
+    API_VS_DOCS_DIR,
+    INFO_VS_DOCS_DIR,
+)
+from .leanspace_manager import LeanWorkspaceManager
 
 
 class OpenAIClient:
@@ -28,6 +38,104 @@ class OpenAIClient:
         self.client = OpenAI(api_key=api_key)
         self.model = model
         self.reasoning_effort = reasoning_effort
+        
+        # Initialize workspace manager
+        self.workspace_manager: Optional[LeanWorkspaceManager] = None
+
+        # For the ITTER Version init both vector stores using open AI
+        self.api_vs = self.client.vector_stores.create(name="lean-mathlib-docs")
+        self.info_vs = self.client.vector_stores.create(name="lean-info-docs")
+        self._init_vector_store()
+
+        # Also setup itterative tool
+        self.tools = []
+        self._init_tools()
+
+    def _init_vector_store(self):
+        """
+        Initialize vector stores by uploading documents.
+        """
+        api_file_ids = []
+        for path in glob.glob(f"{API_VS_DOCS_DIR}/*.md", recursive=True):
+            f = self.client.files.create(file=open(path, "rb"), purpose="assistants")
+            api_file_ids.append(f.id)
+
+        info_file_ids = []
+        for path in glob.glob(f"{INFO_VS_DOCS_DIR}/*.md", recursive=True):
+            f = self.client.files.create(file=open(path, "rb"), purpose="assistants")
+            info_file_ids.append(f.id)
+
+        self.client.vector_stores.file_batches.upload_and_poll(
+            vector_store_id=self.api_vs.id,
+            file_ids=api_file_ids,
+        )
+
+        self.client.vector_stores.file_batches.upload_and_poll(
+            vector_store_id=self.info_vs.id,
+            file_ids=info_file_ids,
+        )
+
+    def _init_tools(self):
+        """
+        Initialize tools for the ITTER version.
+
+        Tools:
+        - file_search: Search the Lean Mathlib documentation and Info vector stores for relevant information.
+        - apply_patch: Write changes to Lean files in the workspace and test results of changes.
+        - read_file_state: Read the current contents of files in the Lean project workspace.
+        """
+        # Add file search tool
+        self.tools.append({
+            "type": "file_search",
+            "vector_store_ids": [self.api_vs.id, self.info_vs.id],
+        })
+
+        # Add Lean code patch tool
+        self.tools.append({
+            "type": "function",
+            "function": {
+                "name": "apply_patch",
+                "description": "Write changes to lean files in workspace and test results of changes.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "files": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "path": {"type":"string"},
+                                    "content": {"type":"string"}
+                                },
+                                "required": ["path","content"]
+                            },
+                            "description": "Complete contents for any files to create/replace this step."
+                        }
+                    },
+                    "required": ["files"]
+                }
+            }
+        })
+
+        # Add read file state tool
+        self.tools.append({
+            "type": "function",
+            "function": {
+                "name": "read_file_state",
+                "description": "Read the current contents of files in the Lean project workspace.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "paths": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "List of file paths to read."
+                        }
+                    },
+                    "required": ["paths"]
+                }
+            }
+        })
 
     def call_api(self, system_prompt: str, user_prompt: str) -> Optional[str]:
         """
@@ -106,14 +214,14 @@ class OpenAIClient:
                     }
                     f.write(json.dumps(batch_request) + "\n")
 
-            print(f"📝 Created batch input file: {input_file}")
+            print(f"Created batch input file: {input_file}")
             print(f"   Total requests: {len(requests)}")
 
             # Upload the batch file
             with open(input_file, "rb") as f:
                 batch_input_file = self.client.files.create(file=f, purpose="batch")
 
-            print(f"📤 Uploaded batch file: {batch_input_file.id}")
+            print(f"Uploaded batch file: {batch_input_file.id}")
 
             # Create the batch
             batch = self.client.batches.create(
@@ -122,7 +230,7 @@ class OpenAIClient:
                 completion_window="24h",
             )
 
-            print(f"🚀 Batch created: {batch.id}")
+            print(f"Batch created: {batch.id}")
             print(f"   Status: {batch.status}")
 
             return batch.id, str(input_file)
@@ -195,7 +303,7 @@ class OpenAIClient:
             batch = self.client.batches.retrieve(batch_id)
 
             if batch.status != "completed":
-                print(f"⚠️  Batch not completed yet. Status: {batch.status}")
+                print(f" Batch not completed yet. Status: {batch.status}")
                 return None
 
             # Download the output file
@@ -205,7 +313,7 @@ class OpenAIClient:
             output_file.parent.mkdir(parents=True, exist_ok=True)
             output_file.write_bytes(file_response.content)
 
-            print(f"📥 Downloaded batch results to: {output_file}")
+            print(f"Downloaded batch results to: {output_file}")
 
             # Parse results
             results = {}
@@ -220,7 +328,7 @@ class OpenAIClient:
                     results[custom_id] = content
                 else:
                     print(
-                        f"⚠️  Request {custom_id} failed: {result['response']['status_code']}"
+                        f" Request {custom_id} failed: {result['response']['status_code']}"
                     )
                     results[custom_id] = None
 
@@ -275,7 +383,7 @@ class OpenAIClient:
             time.sleep(check_interval)
             elapsed += check_interval
 
-        print(f"\n⚠️  Max wait time ({max_wait}s) exceeded")
+        print(f"\n Max wait time ({max_wait}s) exceeded")
         return "timeout"
 
 

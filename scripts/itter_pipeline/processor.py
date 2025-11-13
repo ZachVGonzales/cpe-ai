@@ -65,21 +65,8 @@ class LeanCodeProcessor:
         self.skip_complex_geometry = skip_complex_geometry
         self.use_rag = use_rag
         
-        # Initialize RAG service if enabled, otherwise use direct OpenAI client
-        if use_rag:
-            print("Initializing RAG service with vector store retrieval...")
-            # Use the Jinja template from system_prompt_file if provided
-            template_path = system_prompt_file if system_prompt_file else None
-            self.rag_service = RAGService(
-                openai_api_key=api_key,
-                openai_model=model,
-                prompt_template_path=template_path
-            )
-            self.system_prompt = None  # RAG service handles prompting
-        else:
-            print("Using direct OpenAI API without RAG...")
-            self.openai_client = OpenAIClient(api_key, model, reasoning_effort)
-            self.system_prompt = load_system_prompt(system_prompt_file)
+        self.openai_client = OpenAIClient(api_key, model, reasoning_effort)
+        self.system_prompt = load_system_prompt(system_prompt_file)
 
         # Create timestamped run directory
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -140,32 +127,27 @@ class LeanCodeProcessor:
                     time.time() - start_time, 2
                 )
                 return False, None, problem_log
+            
+        # Setup the model's workspace
+        print("Setting up model workspace...")
+        workspace_info = self.openai_client.setup_workspace()
+        
+        # Log workspace info
+        problem_log["workspace_root"] = str(workspace_info["root"])
 
         # Create prompt from problem
         user_prompt = self._create_user_prompt(problem)
         problem_log["user_prompt"] = user_prompt
 
-        # Call OpenAI API (with or without RAG)
+        # Call OpenAI API with tools (iterative mode)
         api_start = time.time()
         
-        if self.use_rag:
-            print("Calling OpenAI API with RAG retrieval...")
-            try:
-                rag_result = self.rag_service.query(
-                    query=user_prompt,
-                )
-                response = rag_result.get("response")
-                problem_log["rag_info"] = {
-                    "context_sources": rag_result.get("context_sources", []),
-                    "usage": rag_result.get("usage", {}),
-                }
-            except Exception as e:
-                print(f"RAG query failed: {e}")
-                response = None
-                problem_log["rag_error"] = str(e)
-        else:
-            print("Calling OpenAI API without RAG...")
-            response = self.openai_client.call_api(self.system_prompt, user_prompt)
+        print("Calling OpenAI with iterative tool support...")
+        response, tool_history = self.openai_client.call_api_with_tools(
+            self.system_prompt, 
+            user_prompt,
+            max_iterations=10
+        )
         
         api_duration = time.time() - api_start
 
@@ -173,7 +155,9 @@ class LeanCodeProcessor:
             "duration_seconds": round(api_duration, 2),
             "model": self.model,
             "use_rag": self.use_rag,
+            "tool_calls": len(tool_history),
         }
+        problem_log["tool_history"] = tool_history
 
         if not response:
             print("Failed to get response from OpenAI API")
@@ -183,22 +167,50 @@ class LeanCodeProcessor:
             problem_log["total_duration_seconds"] = round(time.time() - start_time, 2)
             return False, None, problem_log
 
-        # Extract Lean code from response
-        lean_code = extract_lean_code(response)
-        problem_log["generated_code"] = lean_code
-
-        # Test if code compiles
-        print("\nTesting Lean code compilation...")
-        compile_start = time.time()
-        project_root = Path(__file__).parent.parent.parent
-        compile_success, compile_output = test_lean_compilation(lean_code, project_root)
-        compile_duration = time.time() - compile_start
-
-        problem_log["compilation"] = {
-            "success": compile_success,
-            "duration_seconds": round(compile_duration, 2),
-            "output": compile_output,
-        }
+        # Check if any tool call resulted in successful compilation
+        lean_code = None
+        compile_success = False
+        
+        # Look through tool history for successful compilations
+        for tool_call in tool_history:
+            if tool_call["tool"] == "apply_patch":
+                result = tool_call["result"]
+                if result.get("compilation", {}).get("success"):
+                    compile_success = True
+                    # Extract the code from the last successful patch
+                    files = tool_call["arguments"].get("files", [])
+                    if files:
+                        # Concatenate all file contents
+                        lean_code = "\n\n".join([f["content"] for f in files])
+                    problem_log["compilation"] = result["compilation"]
+                    break
+        
+        # If no successful compilation in tool history, extract from response
+        if not compile_success:
+            lean_code = extract_lean_code(response)
+            problem_log["generated_code"] = lean_code
+            
+            # Test if code compiles using workspace manager
+            if self.openai_client.workspace_manager:
+                print("\nTesting final Lean code compilation...")
+                compile_start = time.time()
+                
+                # Apply the code as a patch
+                patch_result = self.openai_client.workspace_manager.apply_patch([{
+                    "path": "src/Main.lean",
+                    "content": lean_code
+                }])
+                
+                compile_duration = time.time() - compile_start
+                compile_success = patch_result.get("compilation", {}).get("success", False)
+                
+                problem_log["compilation"] = {
+                    "success": compile_success,
+                    "duration_seconds": round(compile_duration, 2),
+                    "output": patch_result.get("compilation", {}).get("output", ""),
+                }
+        else:
+            problem_log["generated_code"] = lean_code
 
         if not compile_success:
             print("Lean code does not compile")

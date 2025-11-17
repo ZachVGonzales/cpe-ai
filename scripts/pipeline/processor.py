@@ -77,7 +77,7 @@ class LeanCodeProcessor:
             )
             self.system_prompt = None  # RAG service handles prompting
         else:
-            print("📝 Using direct OpenAI API without RAG...")
+            print("Using direct OpenAI API without RAG...")
             self.openai_client = OpenAIClient(api_key, model, reasoning_effort)
             self.system_prompt = load_system_prompt(system_prompt_file)
 

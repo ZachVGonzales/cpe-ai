@@ -10,6 +10,7 @@ from datetime import datetime
 import glob
 import tempfile
 import subprocess
+import sys
 
 from openai import OpenAI
 
@@ -17,10 +18,14 @@ from .config import (
     DEFAULT_SYSTEM_PROMPT, 
     MAX_RETRIES, 
     RETRY_DELAY,
-    API_VS_DOCS_DIR,
-    INFO_VS_DOCS_DIR,
 )
 from .leanspace_manager import LeanWorkspaceManager
+
+# Add the project root to the path to import from src/
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.cpe_ai.rag.hf_vector_store import SentenceMxbaiRetriever
 
 
 class OpenAIClient:
@@ -42,52 +47,108 @@ class OpenAIClient:
         # Initialize workspace manager
         self.workspace_manager: Optional[LeanWorkspaceManager] = None
 
-        # For the ITTER Version init both vector stores using open AI
-        self.api_vs = self.client.vector_stores.create(name="lean-mathlib-docs")
-        self.info_vs = self.client.vector_stores.create(name="lean-info-docs")
-        self._init_vector_store()
+        # Initialize local RAG retriever
+        print("[INFO] Initializing local RAG retriever...")
+        self.retriever = SentenceMxbaiRetriever()
+        print("[INFO] Local RAG retriever initialized successfully")
 
-        # Also setup itterative tool
+        # Setup iterative tools
         self.tools = []
         self._init_tools()
 
-    def _init_vector_store(self):
+    def _search_documentation(self, query: str, k: int = 50, n: int = 5) -> Dict[str, any]:
         """
-        Initialize vector stores by uploading documents.
+        Search local vector stores for relevant documentation.
+        
+        Args:
+            query: Search query
+            k: Number of initial documents to retrieve before reranking
+            n: Number of top documents to return after reranking
+            
+        Returns:
+            Dictionary containing search results
         """
-        api_file_ids = []
-        for path in glob.glob(f"{API_VS_DOCS_DIR}/*.md", recursive=True):
-            f = self.client.files.create(file=open(path, "rb"), purpose="assistants")
-            api_file_ids.append(f.id)
-
-        info_file_ids = []
-        for path in glob.glob(f"{INFO_VS_DOCS_DIR}/*.md", recursive=True):
-            f = self.client.files.create(file=open(path, "rb"), purpose="assistants")
-            info_file_ids.append(f.id)
-
-        self.client.vector_stores.file_batches.upload_and_poll(
-            vector_store_id=self.api_vs.id,
-            file_ids=api_file_ids,
-        )
-
-        self.client.vector_stores.file_batches.upload_and_poll(
-            vector_store_id=self.info_vs.id,
-            file_ids=info_file_ids,
-        )
+        results = {
+            "lean_api": [],
+            "lean_info": []
+        }
+        
+        # Search lean-api collection
+        try:
+            api_result = self.retriever.retrieve(
+                query=query,
+                collection_name="lean_api",
+                k=k,
+                n=n
+            )
+            docs = api_result.get("documents", [])
+            results["lean_api"] = [
+                {
+                    "content": doc.page_content,
+                    "metadata": doc.metadata if hasattr(doc, "metadata") else {}
+                }
+                for doc in docs
+            ]
+        except Exception as e:
+            print(f"[WARNING] Error searching lean_api: {e}")
+        
+        # Search lean-info collection  
+        try:
+            info_result = self.retriever.retrieve(
+                query=query,
+                collection_name="lean_info",
+                k=k,
+                n=n
+            )
+            docs = info_result.get("documents", [])
+            results["lean_info"] = [
+                {
+                    "content": doc.page_content,
+                    "metadata": doc.metadata if hasattr(doc, "metadata") else {}
+                }
+                for doc in docs
+            ]
+        except Exception as e:
+            print(f"[WARNING] Error searching lean_info: {e}")
+        
+        return results
 
     def _init_tools(self):
         """
         Initialize tools for the ITTER version.
 
         Tools:
-        - file_search: Search the Lean Mathlib documentation and Info vector stores for relevant information.
+        - search_documentation: Search the local Lean Mathlib documentation and Info vector stores for relevant information.
         - apply_patch: Write changes to Lean files in the workspace and test results of changes.
         - read_file_state: Read the current contents of files in the Lean project workspace.
         """
-        # Add file search tool
+        # Add local documentation search tool
         self.tools.append({
-            "type": "file_search",
-            "vector_store_ids": [self.api_vs.id, self.info_vs.id],
+            "type": "function",
+            "function": {
+                "name": "search_documentation",
+                "description": "Search the Lean Mathlib API documentation and Info documentation for relevant information about Lean syntax, tactics, theorems, and libraries.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "The search query to find relevant documentation."
+                        },
+                        "k": {
+                            "type": "integer",
+                            "description": "Number of initial documents to retrieve before reranking (default: 50).",
+                            "default": 50
+                        },
+                        "n": {
+                            "type": "integer",
+                            "description": "Number of top documents to return after reranking (default: 5).",
+                            "default": 5
+                        }
+                    },
+                    "required": ["query"]
+                }
+            }
         })
 
         # Add Lean code patch tool
@@ -173,218 +234,202 @@ class OpenAIClient:
                     return None
 
         return None
-
-    def create_batch_request(
+    
+    def call_steps_api(
         self,
-        requests: List[Dict[str, str]],
-        batch_dir: Path,
-    ) -> Tuple[Optional[str], str]:
+        steps_prompt: str,
+    ):
         """
-        Create a batch API request file.
+        Call OpenAI API with tools and retry logic.
 
         Args:
-            requests: List of request dicts with 'custom_id', 'system_prompt', 'user_prompt'
-                     (optionally 'original_problem_id' for tracking duplicates)
-            batch_dir: Directory to store batch files
+            steps_prompt: Prompt for the API
 
         Returns:
-            Tuple of (batch_id, input_file_path) or (None, error_message)
+            Response content or None if failed
         """
-        batch_dir.mkdir(parents=True, exist_ok=True)
+        response = self.client.chat.completions.create(
+            model=self.model,  # or gpt-4o-mini
+            messages=[{"role": "user", "content": steps_prompt}],
+            response_format={"type": "json_object"},
+        )
 
-        # Create JSONL file for batch API
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        input_file = batch_dir / f"batch_input_{timestamp}.jsonl"
+        return json.loads(response.choices[0].message.content)
+
+    def call_itterative_api(
+        self,
+        patch_prompt: str,
+        workspace: "LeanWorkspaceManager",
+    ) -> Tuple[Optional[Dict], List[Dict]]:
+        """
+        Call OpenAI API iteratively with workspace tool calls.
+        
+        The model can use tools to search files, get workspace state, or apply patches.
+        Each iteration, the model makes a tool call and the patch_prompt is regenerated
+        to reflect current changes. Exits after NO_COMPILE_LIMIT unsuccessful compile
+        attempts or when the model provides a final response.
+
+        Args:
+            patch_prompt: Initial prompt for the API
+            workspace: LeanWorkspaceManager instance for workspace operations
+
+        Returns:
+            Tuple of (final_response, tool_history)
+            - final_response: Final model response dict or None if failed
+            - tool_history: List of all tool calls and their results
+        """
+        from .config import NO_COMPILE_LIMIT
+        
+        # Initialize conversation history with the user's initial request
+        messages = [{"role": "user", "content": patch_prompt}]
+        tool_history = []
+        no_compile_count = 0
+        iteration = 0
+        max_iterations = 50  # Safety limit to prevent infinite loops
+        last_tool_used = None  # Track last tool to prevent consecutive searches
+
+        print(f"[INFO] Starting iterative API call with {len(self.tools)} tools available")
+
+        while iteration < max_iterations:
+            iteration += 1
+            print(f"\n[ITERATION {iteration}] Calling API...")
+
+            try:
+                # Build available tools - disable search_documentation if it was just used
+                available_tools = self.tools
+                if last_tool_used == "search_documentation":
+                    # Filter out search_documentation tool to prevent consecutive searches
+                    available_tools = [t for t in self.tools if t["function"]["name"] != "search_documentation"]
+                    print("[INFO] Disabling search_documentation (used in last iteration)")
+                
+                # Make API call with tools
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    tools=available_tools,
+                    tool_choice="auto",
+                )
+
+                # Get the assistant's response
+                response_message = response.choices[0].message
+                
+                # Add assistant response to conversation history
+                messages.append(response_message)
+
+                # Check if model provided a final text response (no more tool calls)
+                has_tool_call = False
+                tool_calls = response_message.tool_calls
+
+                if tool_calls:
+                    has_tool_call = True
+                    # Process each tool call
+                    for tool_call in tool_calls:
+                        # Update last tool used
+                        last_tool_used = tool_call.function.name
+                        
+                        # Handle function tool calls
+                        result = self._execute_function_tool(tool_call, workspace)
+                        
+                        # Track compilation results
+                        if tool_call.function.name == "apply_patch":
+                            if result.get("compilation", {}).get("success"):
+                                no_compile_count = 0  # Reset on success
+                                print(f"[SUCCESS] Compilation succeeded!")
+                            else:
+                                no_compile_count += 1
+                                print(f"[FAIL] Compilation failed ({no_compile_count}/{NO_COMPILE_LIMIT})")
+                                
+                                # Check if we've hit the limit
+                                if no_compile_count >= NO_COMPILE_LIMIT:
+                                    print(f"[ERROR] Reached NO_COMPILE_LIMIT ({NO_COMPILE_LIMIT})")
+                                    return None, tool_history
+                        
+                        # Log tool call
+                        tool_history.append({
+                            "iteration": iteration,
+                            "tool": tool_call.function.name,
+                            "call_id": tool_call.id,
+                            "arguments": json.loads(tool_call.function.arguments),
+                            "result": result,
+                        })
+
+                        # Provide result back to model
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": json.dumps(result)
+                        })
+
+                # If no tool calls, we're done
+                if not has_tool_call:
+                    print(f"[INFO] No tool calls in response, iteration complete")
+                    return response_message, tool_history
+
+            except Exception as e:
+                print(f"[ERROR] API call failed: {e}")
+                return None, tool_history
+
+        print(f"[WARN] Reached maximum iterations ({max_iterations})")
+        return None, tool_history
+
+    def _execute_function_tool(
+        self,
+        tool_call,
+        workspace: "LeanWorkspaceManager",
+    ) -> Dict:
+        """
+        Execute a function tool call and return the result.
+
+        Args:
+            tool_call: Tool call object from ChatCompletion API response
+            workspace: LeanWorkspaceManager instance
+
+        Returns:
+            Dict containing the tool execution result
+        """
+        tool_name = tool_call.function.name
+        arguments = json.loads(tool_call.function.arguments)
+
+        print(f"[TOOL] Executing {tool_name} with args: {json.dumps(arguments, indent=2)}")
 
         try:
-            with open(input_file, "w") as f:
-                for req in requests:
-                    batch_request = {
-                        "custom_id": req["custom_id"],
-                        "method": "POST",
-                        "url": "/v1/chat/completions",
-                        "body": {
-                            "model": self.model,
-                            "messages": [
-                                {"role": "system", "content": req["system_prompt"]},
-                                {"role": "user", "content": req["user_prompt"]},
-                            ],
-                            "reasoning_effort": self.reasoning_effort,
-                        },
-                    }
-                    f.write(json.dumps(batch_request) + "\n")
+            if tool_name == "search_documentation":
+                # Search local vector stores for documentation
+                query = arguments.get("query", "")
+                k = arguments.get("k", 50)
+                n = arguments.get("n", 5)
+                result = self._search_documentation(query=query, k=k, n=n)
+                
+                # Format result for model
+                formatted_result = {
+                    "success": True,
+                    "query": query,
+                    "results": {
+                        "lean_api_docs": result.get("lean_api", []),
+                        "lean_info_docs": result.get("lean_info", [])
+                    },
+                    "total_results": len(result.get("lean_api", [])) + len(result.get("lean_info", []))
+                }
+                return formatted_result
+            
+            elif tool_name == "apply_patch":
+                # Apply file changes and test compilation
+                files = arguments.get("files", [])
+                result = workspace.apply_patch(files)
+                return result
 
-            print(f"Created batch input file: {input_file}")
-            print(f"   Total requests: {len(requests)}")
+            elif tool_name == "read_file_state":
+                # Read file contents
+                paths = arguments.get("paths", [])
+                result = workspace.read_file_state(paths)
+                return result
 
-            # Upload the batch file
-            with open(input_file, "rb") as f:
-                batch_input_file = self.client.files.create(file=f, purpose="batch")
-
-            print(f"Uploaded batch file: {batch_input_file.id}")
-
-            # Create the batch
-            batch = self.client.batches.create(
-                input_file_id=batch_input_file.id,
-                endpoint="/v1/chat/completions",
-                completion_window="24h",
-            )
-
-            print(f"Batch created: {batch.id}")
-            print(f"   Status: {batch.status}")
-
-            return batch.id, str(input_file)
+            else:
+                return {"error": f"Unknown tool: {tool_name}"}
 
         except Exception as e:
-            print(f"Error creating batch: {e}")
-            return None, str(e)
-
-    def check_batch_status(self, batch_id: str) -> Tuple[str, Dict]:
-        """
-        Check the status of a batch request.
-
-        Args:
-            batch_id: The batch ID to check
-
-        Returns:
-            Tuple of (status, batch_info_dict)
-        """
-        try:
-            batch = self.client.batches.retrieve(batch_id)
-
-            info = {
-                "id": batch.id,
-                "status": batch.status,
-                "created_at": batch.created_at,
-                "completed_at": getattr(batch, "completed_at", None),
-                "failed_at": getattr(batch, "failed_at", None),
-                "request_counts": {
-                    "total": batch.request_counts.total,
-                    "completed": batch.request_counts.completed,
-                    "failed": batch.request_counts.failed,
-                },
-            }
-
-            if batch.status == "completed":
-                info["output_file_id"] = batch.output_file_id
-            if batch.status == "failed":
-                if hasattr(batch, "error_file_id"):
-                    info["error_file_id"] = batch.error_file_id
-                if hasattr(batch, "errors") and batch.errors:
-                    info["errors"] = batch.errors
-                    # Print detailed error information
-                    print(f"\nBatch failed with errors:")
-                    if hasattr(batch.errors, "data"):
-                        for error in batch.errors.data:
-                            print(f"   - {error}")
-                    else:
-                        print(f"   - {batch.errors}")
-
-            return batch.status, info
-
-        except Exception as e:
-            print(f"Error checking batch status: {e}")
-            return "error", {"error": str(e)}
-
-    def retrieve_batch_results(
-        self, batch_id: str, output_file: Path
-    ) -> Optional[Dict[str, str]]:
-        """
-        Retrieve results from a completed batch.
-
-        Args:
-            batch_id: The batch ID
-            output_file: Path to save the raw output
-
-        Returns:
-            Dictionary mapping custom_id to response content, or None if failed
-        """
-        try:
-            batch = self.client.batches.retrieve(batch_id)
-
-            if batch.status != "completed":
-                print(f" Batch not completed yet. Status: {batch.status}")
-                return None
-
-            # Download the output file
-            file_response = self.client.files.content(batch.output_file_id)
-
-            # Save raw output
-            output_file.parent.mkdir(parents=True, exist_ok=True)
-            output_file.write_bytes(file_response.content)
-
-            print(f"Downloaded batch results to: {output_file}")
-
-            # Parse results
-            results = {}
-            for line in file_response.content.decode("utf-8").strip().split("\n"):
-                result = json.loads(line)
-                custom_id = result["custom_id"]
-
-                if result["response"]["status_code"] == 200:
-                    content = result["response"]["body"]["choices"][0]["message"][
-                        "content"
-                    ]
-                    results[custom_id] = content
-                else:
-                    print(
-                        f" Request {custom_id} failed: {result['response']['status_code']}"
-                    )
-                    results[custom_id] = None
-
-            return results
-
-        except Exception as e:
-            print(f"Error retrieving batch results: {e}")
-            return None
-
-    def wait_for_batch(
-        self, batch_id: str, check_interval: int = 60, max_wait: int = 86400
-    ) -> str:
-        """
-        Wait for a batch to complete.
-
-        Args:
-            batch_id: The batch ID to wait for
-            check_interval: Seconds between status checks (default: 60)
-            max_wait: Maximum seconds to wait (default: 86400 = 24h)
-
-        Returns:
-            Final batch status
-        """
-        print(f"Waiting for batch {batch_id} to complete...")
-
-        elapsed = 0
-        while elapsed < max_wait:
-            status, info = self.check_batch_status(batch_id)
-
-            if status in ["completed", "failed", "cancelled", "expired"]:
-                print(f"\nBatch {status}!")
-                if status == "completed":
-                    counts = info["request_counts"]
-                    print(f"   Completed: {counts['completed']}/{counts['total']}")
-                    if counts["failed"] > 0:
-                        print(f"   Failed: {counts['failed']}")
-                return status
-
-            # Print progress
-            counts = info["request_counts"]
-            progress = (
-                counts["completed"] / counts["total"] * 100
-                if counts["total"] > 0
-                else 0
-            )
-            print(
-                f"   Progress: {counts['completed']}/{counts['total']} ({progress:.1f}%) - "
-                f"Status: {status}",
-                end="\r",
-            )
-
-            time.sleep(check_interval)
-            elapsed += check_interval
-
-        print(f"\n Max wait time ({max_wait}s) exceeded")
-        return "timeout"
+            print(f"[ERROR] Tool execution failed: {e}")
+            return {"error": str(e)}
 
 
 def load_system_prompt(system_prompt_file: Optional[str] = None) -> str:

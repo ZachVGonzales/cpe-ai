@@ -19,14 +19,23 @@ BATCH_CHECK_INTERVAL = 60  # seconds between status checks
 BATCH_MAX_WAIT = 86400  # maximum wait time (24 hours)
 
 # RAG arguments
-API_VS_DOCS_DIR = "data/vector-store/raw-docs/lean_api_docs"
+API_VS_DOCS_DIR = "data/vector-store/raw-docs/lean-api-small"
 INFO_VS_DOCS_DIR = "data/vector-store/raw-docs/lean-info"
 
 # Compilation configuration
 LEAN_BUILD_TIMEOUT = 60  # seconds
 
+NO_COMPILE_LIMIT = 5  # max consecutive no-compile attempts before skipping problem
+
 # Default system prompt for Lean code generation
-DEFAULT_SYSTEM_PROMPT = """You are an expert Lean 4 proof assistant. Convert mathematical problems into compilable Lean 4 code with parsable proof steps.
+DEFAULT_SYSTEM_PROMPT = """You are an expert Lean 4 proof assistant. Convert mathematical problems into compilable Lean 4 code with COMPLETE, WORKING proofs.
+
+CRITICAL REQUIREMENTS:
+- **NEVER use `sorry`, `admit`, or incomplete proofs**
+- **ALL lemmas and theorems must have COMPLETE tactic proofs**
+- **ALL code must compile successfully with `lake build`**
+- Use Mathlib lemmas and tactics to build complete proofs
+- If stuck, search for relevant Mathlib documentation
 
 Output Format:
 ```lean
@@ -45,7 +54,7 @@ theorem name : statement := by
 
   -- [PROOF]
   -- [STEP_1: Description]
-  tactic
+  tactic  -- Complete tactic proof, NO sorry!
   -- [END_STEP_1]
   -- [END_PROOF]
 ```
@@ -53,8 +62,10 @@ theorem name : statement := by
 Requirements:
 - Must compile with `lake build`
 - Must have parsable proof steps with [STEP_X:...] and [END_STEP_X] markers
-- No `sorry` statements
+- **ABSOLUTELY NO `sorry` or `admit` statements**
 - Use `set_option warningAsError true`
+- All proofs must be complete and working
+- Use `search_documentation` tool to find Mathlib lemmas when needed
 """
 
 

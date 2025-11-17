@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
 """
-process_opc.py - Process OPC JSON through OpenAI API and test Lean code
+process_opc.py - Process OPC JSON through OpenAI API and test Lean code (Iterative Version)
 
 This script:
 1. Reads a JSON file with math problems
-2. Sends each problem to OpenAI API with the appropriate system prompt
-3. Tests if generated Lean code compiles
+2. Uses iterative pipeline with tool calls for step-by-step proof generation
+3. Tests if generated Lean code compiles at each step
 4. Checks if code has parsable proof steps
 5. Saves successful outputs to a dataset directory
+
+Uses the iterative pipeline which allows the model to:
+- Search Lean documentation via file_search
+- Read workspace state via read_file_state
+- Apply code patches via apply_patch
+- Iteratively fix compilation errors up to NO_COMPILE_LIMIT
 """
 
 import argparse
@@ -18,8 +24,8 @@ from pathlib import Path
 # Add parent directory to path to import pipeline module
 sys.path.insert(0, str(Path(__file__).parent))
 
-from pipeline.config import MODEL_ID, setup_environment, get_api_key
-from pipeline.processor import LeanCodeProcessor
+from itter_pipeline.config import MODEL_ID, setup_environment, get_api_key
+from itter_pipeline.processor import LeanCodeProcessor
 
 
 def main():
@@ -54,7 +60,7 @@ def main():
         "--reasoning-effort",
         default="high",
         choices=["low", "medium", "high"],
-        help="Reasoning effort level for o1/o3 models (default: high)",
+        help="Reasoning effort level for reasoning models (default: high)",
     )
     parser.add_argument(
         "--no-skip-geometry",
@@ -62,20 +68,15 @@ def main():
         help="Don't skip complex geometry problems (default: skip them)",
     )
     parser.add_argument(
-        "--batch",
-        action="store_true",
-        help="Use OpenAI Batch API for processing (cheaper, but takes longer)",
-    )
-    parser.add_argument(
         "--use-rag",
         action="store_true",
-        default=True,
-        help="Use RAG service with vector store retrieval (default: True)",
+        default=False,
+        help="Use RAG service with vector store retrieval (Note: iterative pipeline uses built-in file_search)",
     )
     parser.add_argument(
         "--no-rag",
         action="store_true",
-        help="Disable RAG and use direct OpenAI API",
+        help="Disable RAG (for compatibility, iterative pipeline always has file_search available)",
     )
 
     args = parser.parse_args()
@@ -92,8 +93,19 @@ def main():
         # Get API key
         api_key = get_api_key(args.api_key)
 
-        # Determine RAG usage
+        # Note: Iterative pipeline always uses file_search tool for documentation
+        # The use_rag flag is kept for compatibility but file_search is built-in
         use_rag = not args.no_rag if hasattr(args, 'no_rag') else args.use_rag
+        
+        print("\n" + "="*80)
+        print("ITERATIVE PIPELINE MODE")
+        print("="*80)
+        print("This pipeline uses OpenAI tool calling for iterative proof generation:")
+        print("  - file_search: Searches Lean documentation")
+        print("  - read_file_state: Reads current workspace files")
+        print("  - apply_patch: Applies code changes and tests compilation")
+        print("  - Iteratively fixes errors up to NO_COMPILE_LIMIT")
+        print("="*80 + "\n")
 
         processor = LeanCodeProcessor(
             api_key=api_key,
@@ -105,16 +117,8 @@ def main():
             use_rag=use_rag,
         )
 
-        # Use batch mode or regular mode
-        if args.batch:
-            print(
-                "🔄 Using Batch API mode (50% cost savings, may take up to 24 hours)\n"
-            )
-            processor.process_json_file_batch(
-                args.input_file, max_problems=args.max_problems
-            )
-        else:
-            processor.process_json_file(args.input_file, max_problems=args.max_problems)
+        # Process using iterative pipeline (no batch mode in iterative version)
+        processor.process_json_file(args.input_file, max_problems=args.max_problems)
 
     except Exception as e:
         print(f"\nError: {e}")

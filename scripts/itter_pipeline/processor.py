@@ -110,7 +110,7 @@ class LeanCodeProcessor:
             "problem_id": problem_id,
             "problem": problem_text,
             "start_time": datetime.now().isoformat(),
-            "solution": problem.get("solution", ""),
+            "solution": problem.get("ground_truth_solution", ""),
             "metadata": problem.get("metadata", {}),
         }
 
@@ -318,7 +318,7 @@ class LeanCodeProcessor:
             including a required "Patch Changes Made" section.
         """
         problem_text = problem.get("problem", "")
-        solution = problem.get("solution", "")
+        solution = problem.get("ground_truth_solution", "")
 
         sections = []
 
@@ -407,7 +407,7 @@ class LeanCodeProcessor:
     
     def _create_steps_prompt(self, problem: dict) -> str:
         problem_text = problem.get("problem", "")
-        solution = problem.get("solution", "")
+        solution = problem.get("ground_truth_solution", "")
 
         prompt = (
             "You are a Lean 4 proof planning assistant.\n"

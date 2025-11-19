@@ -265,9 +265,13 @@ class OpenAIClient:
         Call OpenAI API iteratively with workspace tool calls.
         
         The model can use tools to search files, get workspace state, or apply patches.
-        Each iteration, the model makes a tool call and the patch_prompt is regenerated
-        to reflect current changes. Exits after NO_COMPILE_LIMIT unsuccessful compile
-        attempts or when the model provides a final response.
+        Tool calls must alternate: after search_documentation or read_file_state, the 
+        next tool call must be apply_patch. After apply_patch, the model can search or 
+        read again. This prevents the model from making consecutive information-gathering 
+        calls without applying changes.
+        
+        Exits after NO_COMPILE_LIMIT unsuccessful compile attempts or when the model 
+        provides a final response.
 
         Args:
             patch_prompt: Initial prompt for the API
@@ -286,7 +290,8 @@ class OpenAIClient:
         no_compile_count = 0
         iteration = 0
         max_iterations = 50  # Safety limit to prevent infinite loops
-        last_tool_used = None  # Track last tool to prevent consecutive searches
+        consecutive_info_calls = 0  # Track consecutive search/read calls
+        last_tool_used = None  # Track last tool to enforce limits
 
         print(f"[INFO] Starting iterative API call with {len(self.tools)} tools available")
 
@@ -295,12 +300,17 @@ class OpenAIClient:
             print(f"\n[ITERATION {iteration}] Calling API...")
 
             try:
-                # Build available tools - disable search_documentation if it was just used
+                # Build available tools - enforce 3 info-gathering calls max before patch required
+                # After 2 consecutive search_documentation or read_file_state calls, only allow apply_patch
                 available_tools = self.tools
-                if last_tool_used == "search_documentation":
-                    # Filter out search_documentation tool to prevent consecutive searches
-                    available_tools = [t for t in self.tools if t["function"]["name"] != "search_documentation"]
-                    print("[INFO] Disabling search_documentation (used in last iteration)")
+                if consecutive_info_calls >= 2:
+                    # After 2 info-gathering calls, require apply_patch
+                    available_tools = [t for t in self.tools if t["function"]["name"] == "apply_patch"]
+                    print(f"[INFO] Enforcing apply_patch after {consecutive_info_calls} consecutive info-gathering calls")
+                elif last_tool_used == "apply_patch":
+                    # After apply_patch, allow search or read but not another patch
+                    available_tools = [t for t in self.tools if t["function"]["name"] != "apply_patch"]
+                    print(f"[INFO] Allowing search/read after apply_patch")
                 
                 # Make API call with tools
                 response = self.client.chat.completions.create(
@@ -324,14 +334,22 @@ class OpenAIClient:
                     has_tool_call = True
                     # Process each tool call
                     for tool_call in tool_calls:
+                        tool_name = tool_call.function.name
+                        
+                        # Update consecutive info call counter
+                        if tool_name in ["search_documentation", "read_file_state"]:
+                            consecutive_info_calls += 1
+                        elif tool_name == "apply_patch":
+                            consecutive_info_calls = 0  # Reset counter after patch
+                        
                         # Update last tool used
-                        last_tool_used = tool_call.function.name
+                        last_tool_used = tool_name
                         
                         # Handle function tool calls
                         result = self._execute_function_tool(tool_call, workspace)
                         
                         # Track compilation results
-                        if tool_call.function.name == "apply_patch":
+                        if tool_name == "apply_patch":
                             if result.get("compilation", {}).get("success"):
                                 no_compile_count = 0  # Reset on success
                                 print(f"[SUCCESS] Compilation succeeded!")

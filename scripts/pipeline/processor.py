@@ -124,7 +124,7 @@ class LeanCodeProcessor:
             "problem_id": problem_id,
             "problem": problem_text,
             "start_time": datetime.now().isoformat(),
-            "solution": problem.get("solution", ""),
+            "solution": problem.get("ground_truth_solution", ""),
             "metadata": problem.get("metadata", {}),
         }
 
@@ -236,7 +236,7 @@ class LeanCodeProcessor:
     def _create_user_prompt(self, problem: Dict[str, Any]) -> str:
         """Create user prompt from problem data."""
         problem_text = problem.get("problem", "")
-        solution = problem.get("solution", "")
+        solution = problem.get("ground_truth_solution", "")
 
         prompt = f"Problem:\n{problem_text}\n\n"
 
@@ -598,7 +598,7 @@ class LeanCodeProcessor:
             problem_log = {
                 "problem_id": problem_id,
                 "problem": problem.get("problem", ""),
-                "solution": problem.get("solution", ""),
+                "solution": problem.get("ground_truth_solution", ""),
                 "metadata": problem.get("metadata", {}),
                 "generated_code": lean_code,
                 "compilation": {
